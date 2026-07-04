@@ -16,10 +16,18 @@
       #style { font-size: 15px; font-weight: 800; color: #ffd23c; margin-top: 2px; min-height: 18px; }
       #delta { font-size: 22px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; min-height: 26px; }
       #hint { position: fixed; top: 16px; right: 18px; color: #9fb; font-size: 12px; z-index: 5; opacity:.8; text-align: right; }
-      #dash { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 5; pointer-events: none;
-        font-size: 12px; font-weight: 800; letter-spacing: 1px; padding: 5px 12px; border-radius: 999px;
-        border: 1px solid #2c3a5c; color: #7f8db0; background: rgba(10,16,30,.6); opacity: 0; transition: opacity .2s; }
-      #dash.ready { color: #06121a; background: #38e1ff; border-color: #38e1ff; box-shadow: 0 0 16px rgba(56,225,255,.6); }
+      /* Virtual joystick: a floating base + knob that appears where you touch. */
+      #stick { position: fixed; z-index: 6; width: 130px; height: 130px; margin: -65px 0 0 -65px;
+        border-radius: 50%; background: rgba(20,30,52,.45); border: 2px solid rgba(120,150,200,.5);
+        pointer-events: none; opacity: 0; transition: opacity .12s; }
+      #knob { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; margin: -29px 0 0 -29px;
+        border-radius: 50%; background: radial-gradient(circle at 40% 35%, #7fe9ff, #38e1ff 70%);
+        box-shadow: 0 4px 14px rgba(0,0,0,.5); }
+      #jumpBtn { position: fixed; right: 26px; bottom: 26px; z-index: 6; width: 92px; height: 92px;
+        border-radius: 50%; background: rgba(56,225,255,.18); border: 2px solid rgba(56,225,255,.6);
+        color: #cdefff; font-weight: 800; font-size: 15px; display: flex; align-items: center; justify-content: center;
+        letter-spacing: 1px; user-select: none; -webkit-user-select: none; touch-action: none; }
+      #jumpBtn:active { background: rgba(56,225,255,.4); }
       #popup { position: fixed; left: 50%; top: 44%; transform: translateX(-50%); z-index: 6; pointer-events: none;
         font-size: 30px; font-weight: 900; color: #ffd23c; text-shadow: 0 4px 20px rgba(0,0,0,.7); opacity: 0; }
       #pos { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 5;
@@ -38,14 +46,12 @@
     <div id="app"></div>
     <div id="hud"><div id="time">0.00</div><div id="sub">TRAMPA 3D · cenital</div><div id="style"></div><div id="delta"></div></div>
     <div id="pos"></div>
-    <div id="hint">← → esquiva · ESPACIO salta<br/>Q/E o ⇧+← → dash · roza sin morir = estilo</div>
+    <div id="hint">← → mueve (mantén = más) · ESPACIO salta<br/>⇧ = preciso · rozar sin morir = estilo</div>
     <div id="progressWrap"><div id="progressBar"></div></div>
-    <div id="dash">DASH</div>
     <div id="popup"></div>
     <div id="countdown"></div>
-    <div class="zone" id="zl"></div>
-    <div class="zone" id="zj"></div>
-    <div class="zone" id="zr"></div>
+    <div id="stick"><div id="knob"></div></div>
+    <div id="jumpBtn">SALTAR</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

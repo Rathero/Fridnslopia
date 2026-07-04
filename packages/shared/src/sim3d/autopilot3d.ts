@@ -27,49 +27,40 @@ export function autopilot3d(course: Course3D, placedTraps: PlacedTrap3D[] = []):
       (f) => Math.abs(x - f.x) <= f.w / 2 + 0.05 && z >= f.z - f.d / 2 && z <= f.z + f.d / 2,
     );
 
+  let lastSteer = 0;
   while (!sim.finished && sim.frame < MAX_RUN_FRAMES_3D) {
     const p = sim.getPlayer();
-    if (p.grounded) {
-      // Gap directly ahead in the current lane -> jump before the edge.
-      if (floorAt(p.x, p.z + 0.6) && !floorAt(p.x, p.z + 3.4)) {
-        rec('J');
-      } else {
-        // Score each reachable lane by how "unsafe" it is: obstacles within the
-        // lookahead penalise a lane in proportion to how SOON we'd reach them
-        // (closer = worse). This makes the bot dodge the IMMINENT obstacle even
-        // when a later, staggered one also conflicts — instead of freezing at
-        // centre (which killed it on chicanes). A lane with no floor is out.
-        const margin = 0.62; // ~player radius
-        const score = (x: number): number => {
-          if (!floorAt(x, p.z + 3.2) || !floorAt(x, p.z + 5)) return Infinity;
-          let penalty = 0;
-          for (const o of course.obstacles) {
-            const dz = o.z - p.z;
-            if (dz <= 0.4 || dz > 11) continue;
-            // Dense sub-frame sampling so fast movers / tight weaves aren't
-            // missed between coarse samples (raised the completable rate a lot).
-            for (const df of [2, 4, 6, 8, 11, 14, 18]) {
-              const b = obstacleAABB(o, sim.frame + df);
-              if (x > b.minX - margin && x < b.maxX + margin) {
-                penalty += 10 / dz; // the nearer the obstacle, the worse
-                break;
-              }
-            }
-          }
-          return penalty;
-        };
-        // Slight hysteresis toward the current lane avoids ping-ponging between
-        // two equally-scored lanes on rapid alternating walls.
-        let best = 0;
-        let bestScore = Infinity;
-        for (const x of lanes) {
-          const s = score(x) + Math.abs(x - p.x) * 0.04 + Math.abs(x) * 0.015;
-          if (s < bestScore - 1e-6) { bestScore = s; best = x; }
+
+    // Jump a gap directly ahead in the current lane.
+    if (p.grounded && floorAt(p.x, p.z + 0.6) && !floorAt(p.x, p.z + 3.4)) rec('J');
+
+    // Score each lane by how "unsafe" it is (obstacle sooner = worse; no floor = out),
+    // pick the best, then STEER toward it with an analog axis proportional to the
+    // gap — the same continuous control a human has.
+    const margin = 0.62;
+    const score = (x: number): number => {
+      if (!floorAt(x, p.z + 3.2) || !floorAt(x, p.z + 5)) return Infinity;
+      let penalty = 0;
+      for (const o of course.obstacles) {
+        const dz = o.z - p.z;
+        if (dz <= 0.4 || dz > 11) continue;
+        for (const df of [2, 4, 6, 8, 11, 14, 18]) {
+          const b = obstacleAABB(o, sim.frame + df);
+          if (x > b.minX - margin && x < b.maxX + margin) { penalty += 10 / dz; break; }
         }
-        if (best > p.x + 0.35) rec('R');
-        else if (best < p.x - 0.35) rec('L');
       }
+      return penalty;
+    };
+    let best = 0, bestScore = Infinity;
+    for (const x of lanes) {
+      const s = score(x) + Math.abs(x - p.x) * 0.04 + Math.abs(x) * 0.015;
+      if (s < bestScore - 1e-6) { bestScore = s; best = x; }
     }
+    const dx = best - p.x;
+    // Proportional steer, quantised to 5% steps with a small dead-zone.
+    let steer = Math.abs(dx) < 0.18 ? 0 : Math.max(-100, Math.min(100, Math.round((dx * 55) / 5) * 5));
+    if (steer !== lastSteer) { rec(`S${steer}`); lastSteer = steer; }
+
     sim.step();
   }
 

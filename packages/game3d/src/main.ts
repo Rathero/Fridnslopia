@@ -21,8 +21,10 @@ const progressWrap = document.getElementById('progressWrap')!;
 const progressBar = document.getElementById('progressBar')!;
 const countdownEl = document.getElementById('countdown')!;
 const styleEl = document.getElementById('style')!;
-const dashEl = document.getElementById('dash')!;
 const popupEl = document.getElementById('popup')!;
+const stickEl = document.getElementById('stick')!;
+const knobEl = document.getElementById('knob')!;
+const jumpBtn = document.getElementById('jumpBtn')!;
 const hint = document.getElementById('hint');
 
 const AUTOPLAY = new URLSearchParams(location.search).has('autoplay');
@@ -42,7 +44,10 @@ let lastNear = 0;
 let popupMs = 0;
 let bestGhost: PreparedGhost3D | null = null;
 let bestCursor = 0;
-const pending: Input3D[] = [];
+const pending: Input3D[] = [];        // discrete events (jump)
+let steer = 0;                        // analog lateral axis, -100..100
+let lastSteerSent = 0;                // last steer recorded into the log
+let leftHeld = false, rightHeld = false, shiftHeld = false;
 let events: { f: number; t: Input3D }[] = [];
 let autoEvents: Map<number, Input3D[]> | null = null;
 
@@ -71,6 +76,9 @@ function startRun(d: GameData3D) {
   popupMs = 0;
   countdownMs = COUNTDOWN_MS;
   pending.length = 0;
+  steer = 0; lastSteerSent = 0; leftHeld = rightHeld = shiftHeld = false;
+  stickEl.style.opacity = '0';
+  jumpBtn.style.display = 'none';
   events = [];
   autoEvents = null;
 
@@ -87,7 +95,6 @@ function startRun(d: GameData3D) {
   styleEl.textContent = '';
   progressBar.style.width = '0%';
   progressWrap.style.opacity = '0';
-  dashEl.style.opacity = '0';
   popupEl.style.opacity = '0';
 
   if (d.autoplay || AUTOPLAY) {
@@ -126,7 +133,8 @@ function finish() {
   posEl.textContent = '';
   deltaEl.textContent = '';
   styleEl.textContent = '';
-  dashEl.style.opacity = '0';
+  stickEl.style.opacity = '0';
+  jumpBtn.style.display = 'none';
   popupEl.style.opacity = '0';
   countdownEl.style.opacity = '0';
   result.style = style;
@@ -138,28 +146,53 @@ function showPopup(text: string) {
   popupMs = 650;
 }
 
-// ---- input ----
+// ---- input: analog steer (joystick / arrows) + jump ----
+const active = () => running && countdownMs <= 0;
+
+// PC: arrows/A-D held = steer; hold longer to move further. Shift = precision.
+function recomputeSteer() {
+  const dir = (rightHeld ? 1 : 0) - (leftHeld ? 1 : 0);
+  steer = dir * (shiftHeld ? 45 : 100);
+}
 addEventListener('keydown', (e) => {
-  if (!running || countdownMs > 0 || e.repeat) return;
-  const sh = e.shiftKey;
-  if (e.code === 'KeyQ') pending.push('DL');
-  else if (e.code === 'KeyE') pending.push('DR');
-  else if (e.code === 'ArrowLeft' || e.code === 'KeyA') pending.push(sh ? 'DL' : 'L');
-  else if (e.code === 'ArrowRight' || e.code === 'KeyD') pending.push(sh ? 'DR' : 'R');
-  else if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') pending.push('J');
+  if (!active()) return;
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') { leftHeld = true; recomputeSteer(); }
+  else if (e.code === 'ArrowRight' || e.code === 'KeyD') { rightHeld = true; recomputeSteer(); }
+  else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { shiftHeld = true; recomputeSteer(); }
+  else if (!e.repeat && (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW')) pending.push('J');
 });
-// Touch zones: single tap steps a lane; a quick double-tap on a side dashes.
-const lastTap: Record<string, number> = {};
-const zone = (id: string, step: Input3D, dash?: Input3D) =>
-  document.getElementById(id)?.addEventListener('pointerdown', (ev) => {
-    if (!running || countdownMs > 0) return;
-    const now = (ev as PointerEvent).timeStamp;
-    if (dash && now - (lastTap[id] ?? -999) < 260) { pending.push(dash); lastTap[id] = 0; }
-    else { pending.push(step); lastTap[id] = now; }
-  });
-zone('zl', 'L', 'DL');
-zone('zr', 'R', 'DR');
-zone('zj', 'J');
+addEventListener('keyup', (e) => {
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') { leftHeld = false; recomputeSteer(); }
+  else if (e.code === 'ArrowRight' || e.code === 'KeyD') { rightHeld = false; recomputeSteer(); }
+  else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { shiftHeld = false; recomputeSteer(); }
+});
+
+// Mobile/touch: a floating virtual joystick appears where you press; drag left/
+// right for analog steering (how far you push = how fast/far you move).
+const STICK_R = 55;
+let stickId = -1, stickCx = 0;
+addEventListener('pointerdown', (e) => {
+  if (!active() || stickId !== -1) return;
+  if ((e.target as HTMLElement)?.id === 'jumpBtn') return;
+  stickId = e.pointerId; stickCx = e.clientX;
+  stickEl.style.left = `${e.clientX}px`;
+  stickEl.style.top = `${e.clientY}px`;
+  stickEl.style.opacity = '1';
+  knobEl.style.transform = 'translate(0,0)';
+});
+addEventListener('pointermove', (e) => {
+  if (e.pointerId !== stickId) return;
+  const dx = Math.max(-STICK_R, Math.min(STICK_R, e.clientX - stickCx));
+  knobEl.style.transform = `translate(${dx}px,0)`;
+  steer = Math.round((dx / STICK_R) * 100 / 5) * 5;
+});
+function endStick(e: PointerEvent) {
+  if (e.pointerId !== stickId) return;
+  stickId = -1; steer = 0; stickEl.style.opacity = '0';
+}
+addEventListener('pointerup', endStick);
+addEventListener('pointercancel', endStick);
+jumpBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); if (active()) pending.push('J'); });
 
 // ---- HUD helpers ----
 function renderGhosts(f: number) {
@@ -208,6 +241,7 @@ function loop(tms: number) {
     if (countdownMs <= 0) {
       countdownEl.style.opacity = '0';
       progressWrap.style.opacity = '1';
+      jumpBtn.style.display = 'flex';
     }
     return;
   }
@@ -220,6 +254,10 @@ function loop(tms: number) {
     if (autoEvents) {
       const evs = autoEvents.get(sim.frame);
       if (evs) for (const t of evs) pending.push(t);
+    } else if (steer !== lastSteerSent) {
+      // Record an analog steer change at this frame (deterministic input log).
+      pending.push(`S${steer}`);
+      lastSteerSent = steer;
     }
     for (const t of pending) {
       if (t === 'J') {
@@ -251,10 +289,6 @@ function loop(tms: number) {
     styleEl.textContent = `✨ ${style}`;
     showPopup(`¡AL RAS! +${gained}`);
   }
-  // Dash-ready pip.
-  dashEl.style.opacity = '1';
-  dashEl.className = p.dashReady ? 'ready' : '';
-  dashEl.textContent = p.dashReady ? 'DASH ✦' : 'DASH …';
   // Popup float + fade.
   if (popupMs > 0) {
     popupMs -= dt * 1000;

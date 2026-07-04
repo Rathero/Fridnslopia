@@ -53,11 +53,16 @@ export function initRapier3D(): Promise<void> {
   return ready;
 }
 
-export type Input3D = 'L' | 'R' | 'J' | 'DL' | 'DR';
+/**
+ * Input log token. `'J'` = jump; `'S<int>'` sets the analog lateral steer axis,
+ * int in [-100,100] (percent of max strafe). Continuous control — how far/fast
+ * you move is up to the joystick (mobile) or how long you hold the arrows (PC).
+ */
+export type Input3D = string;
 
 export interface PlayerState3D {
   x: number; y: number; z: number; vy: number; grounded: boolean; spin: number; speed: number;
-  nearMisses: number; dashReady: boolean;
+  nearMisses: number; steer: number;
 }
 
 /** World-space AABB of a moving obstacle at a given frame. */
@@ -101,7 +106,8 @@ export class Sim3D {
   readonly trapHits: TrapHit3D[] = [];
 
   private player!: RAPIER.RigidBody;
-  private targetX = 0;
+  private steer = 0;          // target lateral axis, -1..1 (analog)
+  private appliedSteer = 0;   // smoothed axis actually applied
   private grounded = false;
   private framesSinceGround = 99;
   private spin = 0;
@@ -109,8 +115,6 @@ export class Sim3D {
   private r: number;
   private gluedFrames = 0;
   private bounceCooldown = 0;
-  private dashFrames = 0;
-  private dashCooldown = 0;
   private grazed = new Set<number>();
   private dangers: Danger3D[] = [];
   private trapHitSet = new Set<Danger3D>();
@@ -159,21 +163,12 @@ export class Sim3D {
   }
 
   input(t: Input3D) {
-    if (t === 'L') this.moveLeft();
-    else if (t === 'R') this.moveRight();
-    else if (t === 'DL') this.dash(-1);
-    else if (t === 'DR') this.dash(1);
-    else this.jump();
-  }
-  moveLeft() { this.targetX = Math.max(-this.course.halfWidth + 0.6, this.targetX - this.params.laneStep); }
-  moveRight() { this.targetX = Math.min(this.course.halfWidth - 0.6, this.targetX + this.params.laneStep); }
-  /** A quick 2-lane evade with a short cooldown — a burst sidestep at speed. */
-  dash(dir: -1 | 1) {
-    if (this.dashCooldown > 0) return;
-    const lim = this.course.halfWidth - 0.6;
-    this.targetX = Math.max(-lim, Math.min(lim, this.targetX + dir * this.params.laneStep * 2));
-    this.dashFrames = 9;
-    this.dashCooldown = 26;
+    if (t === 'J') { this.jump(); return; }
+    // 'S<int>' → set the analog steer axis (percent, -100..100).
+    if (t.charCodeAt(0) === 83 /* 'S' */) {
+      const v = parseInt(t.slice(1), 10);
+      if (!Number.isNaN(v)) this.steer = Math.max(-1, Math.min(1, v / 100));
+    }
   }
   jump() {
     if (!(this.grounded || this.framesSinceGround <= 6)) return;
@@ -189,18 +184,22 @@ export class Sim3D {
 
     if (this.gluedFrames > 0) this.gluedFrames--;
     if (this.bounceCooldown > 0) this.bounceCooldown--;
-    if (this.dashCooldown > 0) this.dashCooldown--;
-    if (this.dashFrames > 0) this.dashFrames--;
     const speed = this.gluedFrames > 0 ? this.baseSpeed() * 0.4 : this.baseSpeed();
-    const dx = this.targetX - t.x;
-    // A dash briefly boosts lateral acceleration + cap so the 2-lane evade snaps.
-    const cap = this.dashFrames > 0 ? this.params.maxStrafe * 2.4 : this.params.maxStrafe;
-    const accel = this.dashFrames > 0 ? this.params.strafeAccel * 2 : this.params.strafeAccel;
-    const vx = Math.max(-cap, Math.min(cap, dx * accel));
+    // Analog lateral control: the steer axis (-1..1) maps to lateral velocity,
+    // smoothed for feel. Distance moved = how hard/long you push — no fixed step.
+    this.appliedSteer += (this.steer - this.appliedSteer) * 0.4;
+    let vx = this.appliedSteer * this.params.maxStrafe * (this.gluedFrames > 0 ? 0.5 : 1);
+    const lim = this.course.halfWidth - this.r;
+    if ((t.x <= -lim && vx < 0) || (t.x >= lim && vx > 0)) vx = 0; // don't push off the outer edge
     this.player.setLinvel({ x: vx, y: v.y, z: speed }, true);
 
     this.world.step();
     this.frame++;
+
+    // Keep the runner within the outer track bounds (analog control can overshoot).
+    const pt = this.player.translation();
+    if (pt.x < -lim) this.player.setTranslation({ x: -lim, y: pt.y, z: pt.z }, true);
+    else if (pt.x > lim) this.player.setTranslation({ x: lim, y: pt.y, z: pt.z }, true);
 
     const p = this.player.translation();
     const ray = new RAPIER.Ray({ x: p.x, y: p.y, z: p.z }, { x: 0, y: -1, z: 0 });
@@ -221,8 +220,8 @@ export class Sim3D {
         const b = d.box;
         if (!this.overlaps(p, b.minX, b.maxX, b.minY, b.maxY, b.minZ, b.maxZ)) continue;
         if (d.effect === 'glue') {
-          // Dashing straight through the glue negates it — a clean beat.
-          if (this.dashFrames > 0) { this.beatTrap(d); continue; }
+          // Steering hard through the glue (or jumping over it) beats it cleanly.
+          if (Math.abs(this.appliedSteer) > 0.7) { this.beatTrap(d); continue; }
           this.gluedFrames = Math.max(this.gluedFrames, 26);
           this.recordTrapHit(d);
         } else if (d.effect === 'bounce') {
@@ -281,12 +280,11 @@ export class Sim3D {
     this.penaltySeconds += this.params.respawnPenalty;
     this.player.setTranslation({ x: 0, y: this.r + 0.3, z: this.lastCheckpointZ + 0.5 }, true);
     this.player.setLinvel({ x: 0, y: 0, z: 0 }, true);
-    this.targetX = 0;
+    this.steer = 0;
+    this.appliedSteer = 0;
     this.framesSinceGround = 99;
     this.gluedFrames = 0;
     this.bounceCooldown = 0;
-    this.dashFrames = 0;
-    this.dashCooldown = 0;
   }
 
   /** Credit a trap that caught the runner — once per trap (deterministic). */
@@ -308,7 +306,7 @@ export class Sim3D {
     const v = this.player.linvel();
     return {
       x: t.x, y: t.y, z: t.z, vy: v.y, grounded: this.grounded, spin: this.spin,
-      speed: this.baseSpeed(), nearMisses: this.nearMisses, dashReady: this.dashCooldown === 0,
+      speed: this.baseSpeed(), nearMisses: this.nearMisses, steer: this.appliedSteer,
     };
   }
   progress(): number { return Math.max(0, Math.min(1, this.player.translation().z / this.course.finishZ)); }
