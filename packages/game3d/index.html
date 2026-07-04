@@ -13,8 +13,15 @@
       }
       #time { font-size: 40px; font-weight: 800; letter-spacing: 1px; }
       #sub { font-size: 14px; color: #8fd; margin-top: 2px; }
+      #style { font-size: 15px; font-weight: 800; color: #ffd23c; margin-top: 2px; min-height: 18px; }
       #delta { font-size: 22px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; min-height: 26px; }
-      #hint { position: fixed; top: 16px; right: 18px; color: #9fb; font-size: 12px; z-index: 5; opacity:.8; }
+      #hint { position: fixed; top: 16px; right: 18px; color: #9fb; font-size: 12px; z-index: 5; opacity:.8; text-align: right; }
+      #dash { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 5; pointer-events: none;
+        font-size: 12px; font-weight: 800; letter-spacing: 1px; padding: 5px 12px; border-radius: 999px;
+        border: 1px solid #2c3a5c; color: #7f8db0; background: rgba(10,16,30,.6); opacity: 0; transition: opacity .2s; }
+      #dash.ready { color: #06121a; background: #38e1ff; border-color: #38e1ff; box-shadow: 0 0 16px rgba(56,225,255,.6); }
+      #popup { position: fixed; left: 50%; top: 44%; transform: translateX(-50%); z-index: 6; pointer-events: none;
+        font-size: 30px; font-weight: 900; color: #ffd23c; text-shadow: 0 4px 20px rgba(0,0,0,.7); opacity: 0; }
       #pos { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 5;
         color: #eaf2ff; font-size: 18px; font-weight: 800; text-shadow: 0 2px 8px rgba(0,0,0,.6); pointer-events: none; }
       #progressWrap { position: fixed; left: 6%; right: 6%; bottom: 14px; height: 7px; z-index: 5;
@@ -29,10 +36,12 @@
   </head>
   <body>
     <div id="app"></div>
-    <div id="hud"><div id="time">0.00</div><div id="sub">TRAMPA 3D · cenital</div><div id="delta"></div></div>
+    <div id="hud"><div id="time">0.00</div><div id="sub">TRAMPA 3D · cenital</div><div id="style"></div><div id="delta"></div></div>
     <div id="pos"></div>
-    <div id="hint">← → esquiva · ESPACIO salta</div>
+    <div id="hint">← → esquiva · ESPACIO salta<br/>Q/E o ⇧+← → dash · roza sin morir = estilo</div>
     <div id="progressWrap"><div id="progressBar"></div></div>
+    <div id="dash">DASH</div>
+    <div id="popup"></div>
     <div id="countdown"></div>
     <div class="zone" id="zl"></div>
     <div class="zone" id="zj"></div>

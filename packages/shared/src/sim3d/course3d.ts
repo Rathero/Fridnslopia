@@ -120,6 +120,17 @@ const CHUNKS: Chunk[] = [
     obstacles: [gate(0, 15, 3.0, 100, 0)] },
   { id: 'weave_then_gap', len: 20, difficulty: 4, tags: ['weave', 'gap', 'hard'], floors: [fl(0, 13), fl(16.5, 20)],
     obstacles: [wall(3.1, 3.5), wall(-3.1, 7)] },
+  // Extra variety (Tanda 2) — all built from the same wall/gate the bot can read.
+  { id: 'wall_wave', len: 20, difficulty: 3, tags: ['weave', 'dodge'], floors: [fl(0, 20)],
+    obstacles: [wall(-3.1, 4), wall(3.1, 9), wall(-3.1, 14), wall(3.1, 19)] },
+  { id: 'triple_weave', len: 22, difficulty: 4, tags: ['weave', 'dodge', 'hard'], floors: [fl(0, 22)],
+    obstacles: [wall(-3.1, 4), wall(3.1, 8), wall(-3.1, 12), wall(3.1, 16), wall(-3.1, 20)] },
+  { id: 'gate_wide', len: 16, difficulty: 4, tags: ['mover', 'dodge', 'hard'], floors: [fl(0, 16)],
+    obstacles: [gate(0, 8, 3.6, 90, 0, 4.4)] },
+  { id: 'gap_gate_gap', len: 24, difficulty: 4, tags: ['gap', 'mover', 'jump', 'hard'], floors: [fl(0, 5), fl(9, 17), fl(21, 24)],
+    obstacles: [gate(0, 13, 2.8, 98, 0)] },
+  { id: 'kerb_weave', len: 18, difficulty: 3, tags: ['step', 'weave'], floors: [fl(0, 4), fl(4, 14, 0.4), fl(14, 18)],
+    obstacles: [wall(3.1, 8), wall(-3.1, 11.5)], trapSlots: [{ x: 0, z: 6 }] },
 ];
 
 const START = CHUNKS.find((c) => c.id === 'start_run')!;

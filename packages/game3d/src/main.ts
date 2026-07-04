@@ -18,6 +18,9 @@ const posEl = document.getElementById('pos')!;
 const progressWrap = document.getElementById('progressWrap')!;
 const progressBar = document.getElementById('progressBar')!;
 const countdownEl = document.getElementById('countdown')!;
+const styleEl = document.getElementById('style')!;
+const dashEl = document.getElementById('dash')!;
+const popupEl = document.getElementById('popup')!;
 const hint = document.getElementById('hint');
 
 const AUTOPLAY = new URLSearchParams(location.search).has('autoplay');
@@ -32,6 +35,9 @@ let last = 0;
 let deaths = 0;
 let countdownMs = 0;
 let slowmoMs = 0;
+let style = 0;
+let lastNear = 0;
+let popupMs = 0;
 let bestGhost: PreparedGhost3D | null = null;
 let bestCursor = 0;
 const pending: Input3D[] = [];
@@ -56,6 +62,9 @@ function startRun(d: GameData3D) {
   last = 0;
   deaths = 0;
   slowmoMs = 0;
+  style = 0;
+  lastNear = 0;
+  popupMs = 0;
   countdownMs = COUNTDOWN_MS;
   pending.length = 0;
   events = [];
@@ -71,8 +80,11 @@ function startRun(d: GameData3D) {
   if (hint) hint.style.display = '';
   deltaEl.textContent = '';
   posEl.textContent = '';
+  styleEl.textContent = '';
   progressBar.style.width = '0%';
   progressWrap.style.opacity = '0';
+  dashEl.style.opacity = '0';
+  popupEl.style.opacity = '0';
 
   if (d.autoplay || AUTOPLAY) {
     const log = autopilot3d(d.course, d.placedTraps).log;
@@ -109,23 +121,40 @@ function finish() {
   progressWrap.style.opacity = '0';
   posEl.textContent = '';
   deltaEl.textContent = '';
+  styleEl.textContent = '';
+  dashEl.style.opacity = '0';
+  popupEl.style.opacity = '0';
   countdownEl.style.opacity = '0';
+  result.style = style;
   overlay.showResult(result);
+}
+
+function showPopup(text: string) {
+  popupEl.textContent = text;
+  popupMs = 650;
 }
 
 // ---- input ----
 addEventListener('keydown', (e) => {
-  if (!running || e.repeat) return;
-  if (e.code === 'ArrowLeft' || e.code === 'KeyA') pending.push('L');
-  else if (e.code === 'ArrowRight' || e.code === 'KeyD') pending.push('R');
+  if (!running || countdownMs > 0 || e.repeat) return;
+  const sh = e.shiftKey;
+  if (e.code === 'KeyQ') pending.push('DL');
+  else if (e.code === 'KeyE') pending.push('DR');
+  else if (e.code === 'ArrowLeft' || e.code === 'KeyA') pending.push(sh ? 'DL' : 'L');
+  else if (e.code === 'ArrowRight' || e.code === 'KeyD') pending.push(sh ? 'DR' : 'R');
   else if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') pending.push('J');
 });
-const zone = (id: string, t: Input3D) =>
-  document.getElementById(id)?.addEventListener('pointerdown', () => {
-    if (running && countdownMs <= 0) pending.push(t);
+// Touch zones: single tap steps a lane; a quick double-tap on a side dashes.
+const lastTap: Record<string, number> = {};
+const zone = (id: string, step: Input3D, dash?: Input3D) =>
+  document.getElementById(id)?.addEventListener('pointerdown', (ev) => {
+    if (!running || countdownMs > 0) return;
+    const now = (ev as PointerEvent).timeStamp;
+    if (dash && now - (lastTap[id] ?? -999) < 260) { pending.push(dash); lastTap[id] = 0; }
+    else { pending.push(step); lastTap[id] = now; }
   });
-zone('zl', 'L');
-zone('zr', 'R');
+zone('zl', 'L', 'DL');
+zone('zr', 'R', 'DR');
 zone('zj', 'J');
 
 // ---- HUD helpers ----
@@ -209,6 +238,25 @@ function loop(tms: number) {
   renderer.updateDynamic(f);
   renderer.updatePlayer(p.x, p.y, p.z, p.spin, p.vy, p.grounded, p.speed);
   renderGhosts(f);
+
+  // Style: grazing an obstacle without dying scores points.
+  if (p.nearMisses > lastNear) {
+    const gained = (p.nearMisses - lastNear) * 100;
+    lastNear = p.nearMisses;
+    style += gained;
+    styleEl.textContent = `✨ ${style}`;
+    showPopup(`¡AL RAS! +${gained}`);
+  }
+  // Dash-ready pip.
+  dashEl.style.opacity = '1';
+  dashEl.className = p.dashReady ? 'ready' : '';
+  dashEl.textContent = p.dashReady ? 'DASH ✦' : 'DASH …';
+  // Popup float + fade.
+  if (popupMs > 0) {
+    popupMs -= dt * 1000;
+    popupEl.style.opacity = String(Math.max(0, Math.min(1, popupMs / 400)));
+    popupEl.style.top = `${(44 - (650 - popupMs) / 650 * 7).toFixed(1)}%`;
+  }
 
   // HUD: progress bar, live position among ghosts, delta vs the best ghost.
   progressBar.style.width = `${(sim.progress() * 100).toFixed(1)}%`;

@@ -29,6 +29,7 @@ export interface RunResult3D {
   timeMs: number;
   deaths: number;
   finished: boolean;
+  style?: number;
   inputLog: InputLog3D;
   placedTraps: PlacedTrap3D[];
   online: boolean;

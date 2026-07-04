@@ -220,8 +220,12 @@ export class Overlay {
     const head = r.finished
       ? `<div class="big-time">${timeStr}s</div>`
       : `<div class="big-time" style="color:#ff6b6b">DNF</div>`;
+    const styleLine = r.style
+      ? `<div class="center" style="color:#ffd23c;font-weight:800;font-size:16px">✨ ${r.style} de estilo</div>`
+      : '';
     this.card.innerHTML = `
       ${head}
+      ${styleLine}
       <div class="center muted">${r.deaths} muertes${r.course.modifier !== 'none' ? ' · mod: ' + r.course.modifier : ''}</div>
       <div id="post"></div>
       <div class="row">

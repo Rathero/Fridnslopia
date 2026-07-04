@@ -53,10 +53,11 @@ export function initRapier3D(): Promise<void> {
   return ready;
 }
 
-export type Input3D = 'L' | 'R' | 'J';
+export type Input3D = 'L' | 'R' | 'J' | 'DL' | 'DR';
 
 export interface PlayerState3D {
   x: number; y: number; z: number; vy: number; grounded: boolean; spin: number; speed: number;
+  nearMisses: number; dashReady: boolean;
 }
 
 /** World-space AABB of a moving obstacle at a given frame. */
@@ -90,6 +91,7 @@ export class Sim3D {
   frame = 0;
   finished = false;
   deaths = 0;
+  nearMisses = 0;
   penaltySeconds = 0;
 
   private player!: RAPIER.RigidBody;
@@ -101,6 +103,9 @@ export class Sim3D {
   private r: number;
   private gluedFrames = 0;
   private bounceCooldown = 0;
+  private dashFrames = 0;
+  private dashCooldown = 0;
+  private grazed = new Set<number>();
   private dangers: Danger3D[] = [];
 
   constructor(course: Course3D, placedTraps: PlacedTrap3D[] = []) {
@@ -145,10 +150,20 @@ export class Sim3D {
   input(t: Input3D) {
     if (t === 'L') this.moveLeft();
     else if (t === 'R') this.moveRight();
+    else if (t === 'DL') this.dash(-1);
+    else if (t === 'DR') this.dash(1);
     else this.jump();
   }
   moveLeft() { this.targetX = Math.max(-this.course.halfWidth + 0.6, this.targetX - this.params.laneStep); }
   moveRight() { this.targetX = Math.min(this.course.halfWidth - 0.6, this.targetX + this.params.laneStep); }
+  /** A quick 2-lane evade with a short cooldown — a burst sidestep at speed. */
+  dash(dir: -1 | 1) {
+    if (this.dashCooldown > 0) return;
+    const lim = this.course.halfWidth - 0.6;
+    this.targetX = Math.max(-lim, Math.min(lim, this.targetX + dir * this.params.laneStep * 2));
+    this.dashFrames = 9;
+    this.dashCooldown = 26;
+  }
   jump() {
     if (!(this.grounded || this.framesSinceGround <= 6)) return;
     const v = this.player.linvel();
@@ -163,9 +178,14 @@ export class Sim3D {
 
     if (this.gluedFrames > 0) this.gluedFrames--;
     if (this.bounceCooldown > 0) this.bounceCooldown--;
+    if (this.dashCooldown > 0) this.dashCooldown--;
+    if (this.dashFrames > 0) this.dashFrames--;
     const speed = this.gluedFrames > 0 ? this.baseSpeed() * 0.4 : this.baseSpeed();
     const dx = this.targetX - t.x;
-    const vx = Math.max(-this.params.maxStrafe, Math.min(this.params.maxStrafe, dx * this.params.strafeAccel));
+    // A dash briefly boosts lateral acceleration + cap so the 2-lane evade snaps.
+    const cap = this.dashFrames > 0 ? this.params.maxStrafe * 2.4 : this.params.maxStrafe;
+    const accel = this.dashFrames > 0 ? this.params.strafeAccel * 2 : this.params.strafeAccel;
+    const vx = Math.max(-cap, Math.min(cap, dx * accel));
     this.player.setLinvel({ x: vx, y: v.y, z: speed }, true);
 
     this.world.step();
@@ -201,6 +221,24 @@ export class Sim3D {
 
     if (this.player.translation().y < this.params.killY) this.die();
 
+    // Near-miss / style: graze an obstacle (close but no hit) — counted once
+    // per obstacle. Deterministic; feeds the client's style score. Only when we
+    // didn't just die on it.
+    if (!this.finished) {
+      const graze = 0.6;
+      for (let i = 0; i < this.course.obstacles.length; i++) {
+        if (this.grazed.has(i)) continue;
+        const o = this.course.obstacles[i];
+        if (Math.abs(o.z - p.z) > 1.8) continue;
+        const b = obstacleAABB(o, this.frame);
+        if (this.overlaps(p, b.minX, b.maxX, b.minY, b.maxY, b.minZ, b.maxZ)) continue; // a hit
+        if (this.overlaps(p, b.minX, b.maxX, b.minY, b.maxY, b.minZ, b.maxZ, graze)) {
+          this.grazed.add(i);
+          this.nearMisses++;
+        }
+      }
+    }
+
     const cur = this.player.translation();
     for (const cz of this.course.checkpoints) {
       if (cz <= cur.z && cz > this.lastCheckpointZ) this.lastCheckpointZ = cz;
@@ -208,12 +246,13 @@ export class Sim3D {
     if (cur.z >= this.course.finishZ) this.finished = true;
   }
 
-  private overlaps(p: { x: number; y: number; z: number }, minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number): boolean {
+  private overlaps(p: { x: number; y: number; z: number }, minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number, extra = 0): boolean {
     const cx = Math.max(minX, Math.min(p.x, maxX));
     const cy = Math.max(minY, Math.min(p.y, maxY));
     const cz = Math.max(minZ, Math.min(p.z, maxZ));
     const ex = p.x - cx, ey = p.y - cy, ez = p.z - cz;
-    return ex * ex + ey * ey + ez * ez < this.r * this.r;
+    const rad = this.r + extra;
+    return ex * ex + ey * ey + ez * ez < rad * rad;
   }
 
   private die() {
@@ -225,12 +264,17 @@ export class Sim3D {
     this.framesSinceGround = 99;
     this.gluedFrames = 0;
     this.bounceCooldown = 0;
+    this.dashFrames = 0;
+    this.dashCooldown = 0;
   }
 
   getPlayer(): PlayerState3D {
     const t = this.player.translation();
     const v = this.player.linvel();
-    return { x: t.x, y: t.y, z: t.z, vy: v.y, grounded: this.grounded, spin: this.spin, speed: this.baseSpeed() };
+    return {
+      x: t.x, y: t.y, z: t.z, vy: v.y, grounded: this.grounded, spin: this.spin,
+      speed: this.baseSpeed(), nearMisses: this.nearMisses, dashReady: this.dashCooldown === 0,
+    };
   }
   progress(): number { return Math.max(0, Math.min(1, this.player.translation().z / this.course.finishZ)); }
   timeMs(): number { return Math.round((this.frame / 60 + this.penaltySeconds) * 1000); }

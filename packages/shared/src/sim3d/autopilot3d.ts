@@ -45,8 +45,10 @@ export function autopilot3d(course: Course3D, placedTraps: PlacedTrap3D[] = []):
           let penalty = 0;
           for (const o of course.obstacles) {
             const dz = o.z - p.z;
-            if (dz <= 0.4 || dz > 8) continue;
-            for (const df of [3, 8, 13]) {
+            if (dz <= 0.4 || dz > 11) continue;
+            // Dense sub-frame sampling so fast movers / tight weaves aren't
+            // missed between coarse samples (raised the completable rate a lot).
+            for (const df of [2, 4, 6, 8, 11, 14, 18]) {
               const b = obstacleAABB(o, sim.frame + df);
               if (x > b.minX - margin && x < b.maxX + margin) {
                 penalty += 10 / dz; // the nearer the obstacle, the worse
@@ -56,11 +58,13 @@ export function autopilot3d(course: Course3D, placedTraps: PlacedTrap3D[] = []):
           }
           return penalty;
         };
+        // Slight hysteresis toward the current lane avoids ping-ponging between
+        // two equally-scored lanes on rapid alternating walls.
         let best = 0;
         let bestScore = Infinity;
         for (const x of lanes) {
-          const s = score(x) + Math.abs(x - p.x) * 0.05 + Math.abs(x) * 0.02;
-          if (s < bestScore) { bestScore = s; best = x; }
+          const s = score(x) + Math.abs(x - p.x) * 0.04 + Math.abs(x) * 0.015;
+          if (s < bestScore - 1e-6) { bestScore = s; best = x; }
         }
         if (best > p.x + 0.35) rec('R');
         else if (best < p.x - 0.35) rec('L');
