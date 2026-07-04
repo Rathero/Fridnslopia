@@ -4,8 +4,15 @@ The game is deployed and public.
 
 | What | URL |
 |------|-----|
-| **Play** (client) | https://trampa-nu.vercel.app |
+| **Play** (2D client) | https://trampa-nu.vercel.app |
 | API | https://trampa-api.vercel.app |
+| 3D "cenital" prototype (beta) | https://trampa-3d.vercel.app |
+
+The 2D client's menu has a "🎮 Modo 3D cenital (beta)" button that opens the 3D
+prototype. The 3D is a **separate static Vercel project** (`trampa-3d`, from
+`packages/game3d`), backend-independent — deploy it with
+`npm run build --workspace @trampa/game3d` then `vercel deploy --prod` from
+`packages/game3d/dist`.
 
 - **Public, no auth** — anyone with the link plays by entering a name. Create a
   league or a room and share the invite code with friends.

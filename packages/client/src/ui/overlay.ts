@@ -90,6 +90,7 @@ export class Overlay {
       <button class="btn secondary" id="global">🌍 Reto diario global</button>
       <button class="btn secondary" id="rooms">📺 Salas</button>
       <button class="btn secondary" id="quick">Partida rápida (offline)</button>
+      <button class="btn ghost" id="mode3d">🎮 Modo 3D cenital (beta)</button>
       <div class="row">
         <button class="btn ghost" id="league">Liga</button>
         <button class="btn ghost" id="store">Tienda</button>
@@ -114,6 +115,10 @@ export class Overlay {
     this.$('#quick').addEventListener('click', () => {
       setHandle(handleInput.value.trim());
       this.playQuick();
+    });
+    // The 3D "cenital" prototype is a separate app; open it in a new tab.
+    this.$('#mode3d').addEventListener('click', () => {
+      window.open('https://trampa-3d.vercel.app', '_blank', 'noopener');
     });
     this.$('#league').addEventListener('click', () => this.showLeague());
     this.$('#store').addEventListener('click', () => this.showStore());
