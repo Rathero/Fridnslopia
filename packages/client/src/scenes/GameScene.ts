@@ -3,6 +3,7 @@ import {
   SimWorld,
   FIXED_DT,
   MAX_RUN_FRAMES,
+  autopilot,
   type Course,
   type PlacedTrap,
   type InputEventType,
@@ -20,6 +21,8 @@ export interface GameSceneData {
   ghosts: PreparedGhost[];
   online: boolean;
   playDate?: string;
+  /** Dev/demo mode: let the shared autopilot play the run (see ?autoplay). */
+  autoplay?: boolean;
 }
 
 const GHOST_COLORS = [0xff6b9d, 0xffd23c, 0x6bffb0, 0x6b9dff, 0xd26bff];
@@ -37,6 +40,7 @@ export class GameScene extends Phaser.Scene {
 
   private acc = 0;
   private pending: InputEventType[] = [];
+  private autoEvents: Map<number, InputEventType[]> | null = null;
   private prevX = 0;
   private prevY = 0;
   private done = false;
@@ -67,6 +71,18 @@ export class GameScene extends Phaser.Scene {
     this.world = new SimWorld(c, this.runData.placedTraps);
     this.recorder = new InputRecorder(c.seed);
     this.level = new LevelRenderer(this, c, this.runData.placedTraps);
+
+    // Demo/CI autoplay: precompute the autopilot's input log and replay it,
+    // frame-indexed, so the run drives itself deterministically.
+    if (this.runData.autoplay) {
+      const log = autopilot(c, this.runData.placedTraps).log;
+      this.autoEvents = new Map();
+      for (const ev of log.events) {
+        const arr = this.autoEvents.get(ev.f) ?? [];
+        arr.push(ev.t);
+        this.autoEvents.set(ev.f, arr);
+      }
+    }
 
     // Ghosts
     this.runData.ghosts.forEach((g, i) => {
@@ -159,6 +175,12 @@ export class GameScene extends Phaser.Scene {
     while (this.acc >= FIXED_DT) {
       this.prevX = this.world.getPlayer().x;
       this.prevY = this.world.getPlayer().y;
+
+      // Autoplay: inject the autopilot's events for this frame.
+      if (this.autoEvents) {
+        const evs = this.autoEvents.get(this.world.frame);
+        if (evs) for (const t of evs) this.pending.push(t);
+      }
 
       // Apply queued input at this exact frame (recorded identically).
       if (this.pending.length) {

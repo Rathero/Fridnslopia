@@ -22,8 +22,11 @@ const game = new Phaser.Game({
   scene: [BootScene, GameScene],
 });
 
+// Dev/demo: append ?autoplay to have the shared autopilot play each run.
+const AUTOPLAY = new URLSearchParams(location.search).has('autoplay');
+
 const overlay = new Overlay((data: GameSceneData) => {
-  game.scene.start('Game', data);
+  game.scene.start('Game', { ...data, autoplay: AUTOPLAY });
 });
 
 game.events.on('boot:ready', () => {
