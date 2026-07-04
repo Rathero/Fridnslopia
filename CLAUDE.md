@@ -175,17 +175,30 @@ npm run dev --workspace @trampa/game3d          # http://localhost:5183
 give it `tags` + a `difficulty` (1–5). Rebuild shared; `npm test` verifies
 completability across seeds. Tag weights are chosen by the daily config.
 
-**Add a 3D chunk** → `packages/game3d/src/course.ts` `CHUNKS[]`. Full-width floor
-at `top:0` at both seams; keep it completable by auto-forward + dodge + jump.
+**Add a 3D chunk** (this is the live game) → `packages/shared/src/sim3d/course3d.ts`
+`CHUNKS[]`, built from the `wall`/`gate`/`fl`/`beam` helpers. Give it `tags` +
+`difficulty` (0–4). **Keep it completable by the autopilot** — after adding,
+run a sweep (`autopilot3d(assembleCourse3D(seed, defaultConfig)).finished` over
+~50 seeds); center walls / tight staggers can drop the bot to 0% and get
+re-sampled away, so lean side-only + generous spacing. `npm test` must stay green.
+
+**Gameplay mechanics** (all in `sim3d.ts`, deterministic): forward speed ramps
+with survival (`baseSpeed()`); a lateral **dash** (`'DL'`/`'DR'` inputs, 2-lane
+burst + cooldown); **near-miss "style"** (`nearMisses`, grazing an obstacle
+without hitting); and **skill-check traps** — jump a spike, dash glue; a beaten
+trap scores style and does NOT count as a saboteur hit. `Sim3D.trapHits` is the
+exact hit list the server credits.
 
 **Add an API endpoint** → new file in `packages/server/src/routes/`, mount it in
 `src/index.ts`. Reuse `asyncHandler` + `badRequest/notFound`, parameterised
 queries only, camelCase JSON responses (the client expects camelCase).
 
-**Add a trap type** → extend `TrapType` in `packages/shared/src/course.ts`,
-materialise its effect in `SimWorld` (`sim/world.ts` danger resolution), add it to
-the client trap-type `<select>` in `overlay.ts`, and accept it server-side.
-Re-verify anti-cheat still matches (traps affect the sim).
+**Add a trap type** (live 3D) → extend `TrapType3D` in `sim3d/course3d.ts`,
+materialise its effect in `Sim3D` (`sim3d.ts` danger resolution — call
+`recordTrapHit(d)` when it applies so the saboteur ranking is exact, and
+`beatTrap(d)` if it's skill-beaten), add it to the client trap `<select>` in
+`game3d/src/ui/overlay.ts`, and accept it server-side. Re-verify anti-cheat
+still matches (traps affect the sim).
 
 **Add a daily modifier** → `DAILY_MODIFIERS` + `applyModifier` in
 `constants.ts`, and the enum in `llm/schema.ts`.
@@ -243,8 +256,9 @@ POST /rooms/:id/finish                {handle} → final standings + podium (hos
 4. **Autopilot ≠ completability oracle.** The analytic `verifier` can pass a
    course the heuristic autopilot can't finish (esp. room circuits). For a hard
    guarantee, add a proper reachability/RL verify (spec calls this a v2 nicety).
-5. **Trap-hit detection** (server `notifications.processTrapHits`) is a proximity
-   heuristic on the re-sim, not exact.
+5. **Trap-hit detection** is now **exact**: the deterministic re-sim records
+   `Sim3D.trapHits` (a trap you jumped/dashed/dodged does not count), and
+   `notifications.processTrapHits` credits those. (Was a proximity heuristic.)
 6. **No auth** — identity is a handle (auto-created). Fine for MVP; add real auth
    before any public launch. **Cosmetics entitlements are localStorage-only.**
 7. `courses/:id/ghosts` accepts both `excludeHandle` and `excludeUserId`.
