@@ -6,7 +6,8 @@
   "workspaces": [
     "packages/shared",
     "packages/client",
-    "packages/server"
+    "packages/server",
+    "packages/game3d"
   ],
   "scripts": {
     "build:shared": "npm run build --workspace @trampa/shared",

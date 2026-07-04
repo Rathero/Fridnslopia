@@ -1,0 +1,23 @@
+{
+  "name": "@trampa/game3d",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "TRAMPA 3D — aerial (cenital) obstacle-runner prototype: Three.js + deterministic Rapier3D",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.14.0",
+    "@trampa/shared": "*",
+    "three": "^0.160.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/three": "^0.160.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0"
+  }
+}
