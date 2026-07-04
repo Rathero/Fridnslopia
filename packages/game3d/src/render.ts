@@ -6,6 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { Course3D, PlacedTrap3D } from '@trampa/shared';
 import { obstacleAABB } from '@trampa/shared';
 import { makeRunner, type Runner } from './game/runners.js';
+import { propsForBiome, cloneProp, hasProps } from './game/propLoader.js';
 import { SKINS, equippedSkin, type Skin } from './cosmetics.js';
 
 const FIXED_DT = 1 / 60;
@@ -100,6 +101,7 @@ export class Renderer3D {
     this.buildObstacles();
     this.buildFinish();
     this.buildTraps();
+    this.buildProps();
 
     // Player: a loaded 3D model if the equipped skin has one, else procedural.
     this.character = makeRunner(equippedSkin());
@@ -519,6 +521,43 @@ export class Renderer3D {
     this.sun.position.set(x - 14, y + 26, z - 6);
     this.sun.target.position.set(x, 0, z + 4);
     this.sun.target.updateMatrixWorld();
+  }
+
+  /**
+   * Biome scenery flanking the track: real GLB props (Meshy/CC0) placed down
+   * both sides, receding into the fog to sell depth + speed. Chosen by the
+   * course biome; no-op if no props are loaded (falls back to the bare look).
+   * Pure decoration — outside the play area, never touches the sim.
+   */
+  private buildProps() {
+    if (!hasProps()) return;
+    const list = propsForBiome(this.course.theme);
+    if (!list.length) return;
+    const hw = this.course.halfWidth;
+    const startZ = this.course.startZ - 4;
+    const endZ = this.course.finishZ + 4;
+    let i = 0;
+    for (let z = startZ; z < endZ; z += 8) {
+      for (const side of [-1, 1] as const) {
+        const { group, scale } = cloneProp(list[i % list.length]);
+        group.updateMatrixWorld(true);
+        const size = new THREE.Vector3();
+        new THREE.Box3().setFromObject(group).getSize(size);
+        const targetH = 6 + (i % 3) * 2.5; // varied skyline
+        const s = (size.y > 0.05 && size.y < 1000 ? targetH / size.y : 1) * (scale ?? 1);
+        group.scale.setScalar(s);
+        const box = new THREE.Box3().setFromObject(group);
+        group.position.set(
+          side * (hw + 3 + ((i * 13) % 5)),
+          -box.min.y,
+          z + (side > 0 ? 4 : 0),
+        );
+        group.rotation.y = (i % 4) * 0.5;
+        group.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
+        this.scene.add(group);
+        i++;
+      }
+    }
   }
 
   private buildTraps() {

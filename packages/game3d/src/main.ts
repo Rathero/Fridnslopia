@@ -9,6 +9,7 @@ import {
 import { Renderer3D } from './render.js';
 import { Overlay } from './ui/overlay.js';
 import { loadCharacterModels } from './game/modelLoader.js';
+import { loadProps } from './game/propLoader.js';
 import type { GameData3D, RunResult3D, PreparedGhost3D } from './types.js';
 
 const app = document.getElementById('app')!;
@@ -50,7 +51,7 @@ const overlay = new Overlay((d: GameData3D) => startRun(d));
 async function boot() {
   // Rapier (sim) + any GLB character models load in parallel. Models are
   // best-effort — the game runs on procedural characters if none are present.
-  await Promise.all([initRapier3D(), loadCharacterModels()]);
+  await Promise.all([initRapier3D(), loadCharacterModels(), loadProps()]);
   requestAnimationFrame(loop);
   if (AUTOPLAY) overlay.startDemo();
   else overlay.showMenu();
