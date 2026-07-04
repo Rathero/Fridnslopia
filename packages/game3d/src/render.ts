@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import type { Course3D } from './course.js';
-import { obstacleAABB } from './sim.js';
+import type { Course3D, PlacedTrap3D } from '@trampa/shared';
+import { obstacleAABB } from '@trampa/shared';
 
 /**
  * Three.js renderer for the aerial (cenital) view. Angled top-down camera that
@@ -22,14 +22,18 @@ export class Renderer3D {
   private sky: THREE.Mesh;
   private trail: THREE.Mesh[] = [];
   private trailIdx = 0;
-  private ghost!: THREE.Mesh;
+  private ghostPool: THREE.Mesh[] = [];
+  private container: HTMLElement;
+  private placedTraps: PlacedTrap3D[] = [];
   private finishGlow: THREE.Mesh[] = [];
   private lastY = 0;
   private squash = 0;
   private clock = 0;
 
-  constructor(container: HTMLElement, course: Course3D) {
+  constructor(container: HTMLElement, course: Course3D, placedTraps: PlacedTrap3D[] = []) {
     this.course = course;
+    this.container = container;
+    this.placedTraps = placedTraps;
     const pal = course.palette;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -74,6 +78,7 @@ export class Renderer3D {
     this.buildFloors();
     this.buildObstacles();
     this.buildFinish();
+    this.buildTraps();
 
     // Player: a glowing faceted sphere with a face.
     this.player = new THREE.Group();
@@ -112,20 +117,20 @@ export class Renderer3D {
     this.contact.rotation.x = -Math.PI / 2;
     this.scene.add(this.contact);
 
-    // Ghost of a previous run (translucent).
-    this.ghost = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.55, 2),
-      new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: 0xffffff,
-        emissiveIntensity: 0.15,
-        transparent: true,
-        opacity: 0.28,
-        depthWrite: false,
-      }),
-    );
-    this.ghost.visible = false;
-    this.scene.add(this.ghost);
+    // Ghosts of friends' runs (translucent, colour-coded, reused round-robin).
+    const GHOST_COLORS = [0xff6b9d, 0xffd23c, 0x6bffb0, 0x6b9dff, 0xd26bff];
+    for (let i = 0; i < 5; i++) {
+      const m = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(0.55, 2),
+        new THREE.MeshStandardMaterial({
+          color: GHOST_COLORS[i], emissive: GHOST_COLORS[i], emissiveIntensity: 0.25,
+          transparent: true, opacity: 0.32, depthWrite: false,
+        }),
+      );
+      m.visible = false;
+      this.ghostPool.push(m);
+      this.scene.add(m);
+    }
 
     // Trail (a ring of fading quads reused round-robin).
     const trailMat = new THREE.MeshBasicMaterial({ color: pal.accent, transparent: true, opacity: 0.35, depthWrite: false });
@@ -356,9 +361,33 @@ export class Renderer3D {
     this.sun.target.updateMatrixWorld();
   }
 
-  setGhost(x: number, y: number, z: number, visible: boolean) {
-    this.ghost.visible = visible;
-    if (visible) this.ghost.position.set(x, y, z);
+  private buildTraps() {
+    for (const t of this.placedTraps) {
+      const color = t.trapType === 'spike' ? 0xff2266 : t.trapType === 'bounce' ? 0xffcc00 : 0x22ffcc;
+      const m = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.7, 0),
+        this.mat(color, color, 0.7, 0.4, 0.2),
+      );
+      m.position.set(t.slotX, 0.9, t.slotZ);
+      m.castShadow = true;
+      this.scene.add(m);
+    }
+  }
+
+  /** Position the ghost pool from an array of {x,y,z}; hides the rest. */
+  setGhosts(positions: ({ x: number; y: number; z: number } | null)[]) {
+    this.ghostPool.forEach((m, i) => {
+      const p = positions[i];
+      if (p) { m.visible = true; m.position.set(p.x, p.y, p.z); }
+      else m.visible = false;
+    });
+  }
+
+  dispose() {
+    this.renderer.dispose();
+    if (this.renderer.domElement.parentElement === this.container) {
+      this.container.removeChild(this.renderer.domElement);
+    }
   }
 
   render() {
