@@ -86,37 +86,50 @@ document.getElementById('zl')!.addEventListener('pointerdown', () => pending.pus
 document.getElementById('zr')!.addEventListener('pointerdown', () => pending.push('R'));
 document.getElementById('zj')!.addEventListener('pointerdown', () => pending.push('J'));
 
-// ---- autoplay bot: dodge obstacles, jump gaps, stay on narrow floor ----
+// ---- autoplay bot: pick a clear lane, dodge early, jump gaps ----
+// Lanes reachable from the 2.4-per-tap strafe (clamped to the playfield).
+function reachableLanes(): number[] {
+  const half = course.halfWidth - 0.6;
+  return [-4.4, -2.4, 0, 2.4, 4.4].filter((x) => Math.abs(x) <= half);
+}
+
 function botDecide() {
   const p = sim.getPlayer();
-  // Where is floor at a given (x,z)?
+  if (!p.grounded) return;
+
   const floorAt = (x: number, z: number) =>
     course.floors.some(
-      (f) => Math.abs(x - f.x) <= f.w / 2 + 0.1 && z >= f.z - f.d / 2 && z <= f.z + f.d / 2,
+      (f) => Math.abs(x - f.x) <= f.w / 2 + 0.05 && z >= f.z - f.d / 2 && z <= f.z + f.d / 2,
     );
 
-  if (p.grounded) {
-    // Gap ahead? jump when the near edge is close.
-    if (floorAt(p.x, p.z + 0.6) && !floorAt(p.x, p.z + 3.2)) {
-      pending.push('J');
-      return;
-    }
-    // Narrow floor: drift toward centre if the edges are missing.
-    if (!floorAt(p.x + 1.4, p.z + 2) && p.x > 0.3) return pending.push('L');
-    if (!floorAt(p.x - 1.4, p.z + 2) && p.x < -0.3) return pending.push('R');
+  // 1. Gap directly ahead in the current lane -> jump before the edge.
+  if (floorAt(p.x, p.z + 0.6) && !floorAt(p.x, p.z + 3.4)) {
+    pending.push('J');
+    return;
+  }
 
-    // Obstacle in our lane just ahead? dodge to a clear side.
+  // 2. A lane is unsafe if it loses floor soon, or an obstacle will occupy it
+  //    around the time we arrive (sample a few upcoming frames for movers).
+  const laneBlocked = (x: number): boolean => {
+    if (!floorAt(x, p.z + 3.5)) return true; // would run into a gap/edge
     for (const o of course.obstacles) {
-      const b = obstacleAABB(o, sim.frame + 6);
-      const ahead = o.z > p.z + 1 && o.z < p.z + 7;
-      const inLane = p.x > b.minX - 0.7 && p.x < b.maxX + 0.7;
-      if (ahead && inLane) {
-        const goRight = b.minX - (-course.halfWidth) < course.halfWidth - b.maxX;
-        pending.push(goRight ? 'R' : 'L');
-        return;
+      if (o.z <= p.z + 0.5 || o.z >= p.z + 9) continue;
+      for (const df of [4, 9, 14, 20]) {
+        const b = obstacleAABB(o, sim.frame + df);
+        if (x > b.minX - 0.7 && x < b.maxX + 0.7) return true;
       }
     }
-  }
+    return false;
+  };
+
+  // 3. Steer toward the clear lane nearest us (ties prefer the centre).
+  const clear = reachableLanes()
+    .filter((x) => !laneBlocked(x))
+    .sort((a, b) => Math.abs(a - p.x) - Math.abs(b - p.x) || Math.abs(a) - Math.abs(b));
+  const target = clear.length ? clear[0] : 0;
+
+  if (target > p.x + 0.35) pending.push('R');
+  else if (target < p.x - 0.35) pending.push('L');
 }
 
 // ---- loop ----
