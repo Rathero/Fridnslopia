@@ -25,6 +25,9 @@ await build({
   external: ['pg-native', 'cloudflare:sockets'],
   logLevel: 'info',
   banner: { js: '/* trampa api bundle */' },
+  // Make `module.exports` BE the handler function (Vercel Node expects a
+  // (req,res) default export; esbuild's cjs interop puts it on `.default`).
+  footer: { js: 'module.exports = module.exports.default || module.exports;' },
 });
 
 // Route every path to the single function; Express does the internal routing.
@@ -34,7 +37,7 @@ writeFileSync(
 );
 writeFileSync(
   resolve(outDir, 'package.json'),
-  JSON.stringify({ private: true, name: 'trampa-api', engines: { node: '20.x' } }, null, 2),
+  JSON.stringify({ private: true, name: 'trampa-api', engines: { node: '24.x' } }, null, 2),
 );
 writeFileSync(resolve(outDir, '.vercelignore'), 'node_modules\n');
 

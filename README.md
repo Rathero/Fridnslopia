@@ -9,6 +9,9 @@ challenge you can share.
 > against the clock on a shared daily circuit, and each player plants **one trap**
 > for the others.
 
+**▶ Play it live: https://trampa-nu.vercel.app** (public, no login — create a
+league or room and share the code). Deployment details in [`DEPLOY.md`](./DEPLOY.md).
+
 **New here / continuing the project? Read [`CLAUDE.md`](./CLAUDE.md)** — it's the
 full handoff guide (architecture, run/verify, how to extend, known issues, and a
 prioritised roadmap).
