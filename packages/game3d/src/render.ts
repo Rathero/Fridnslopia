@@ -5,6 +5,8 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { Course3D, PlacedTrap3D } from '@trampa/shared';
 import { obstacleAABB } from '@trampa/shared';
+import { Character } from './game/character.js';
+import { SKINS, equippedSkin, type Skin } from './cosmetics.js';
 
 const FIXED_DT = 1 / 60;
 
@@ -20,7 +22,7 @@ export class Renderer3D {
   readonly renderer: THREE.WebGLRenderer;
   private course: Course3D;
   private player: THREE.Group;
-  private body: THREE.Mesh;
+  private character: Character;
   private playerLight: THREE.PointLight;
   private contact: THREE.Mesh;
   private movers: { mesh: THREE.Mesh; edge: THREE.LineSegments; baseX: number; o: any }[] = [];
@@ -28,7 +30,8 @@ export class Renderer3D {
   private sky: THREE.Mesh;
   private trail: THREE.Mesh[] = [];
   private trailIdx = 0;
-  private ghostPool: THREE.Mesh[] = [];
+  private ghostChars: Character[] = [];
+  private lastX = 0;
   private container: HTMLElement;
   private placedTraps: PlacedTrap3D[] = [];
   private finishGlow: THREE.Mesh[] = [];
@@ -98,24 +101,9 @@ export class Renderer3D {
     this.buildFinish();
     this.buildTraps();
 
-    // Player: a glowing faceted sphere with a face.
-    this.player = new THREE.Group();
-    this.body = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.55, 3),
-      new THREE.MeshStandardMaterial({
-        color: pal.accent,
-        emissive: pal.accent,
-        emissiveIntensity: 0.55,
-        roughness: 0.3,
-        metalness: 0.15,
-      }),
-    );
-    this.body.castShadow = true;
-    this.player.add(this.body);
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x0a0f18, roughness: 0.4 });
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 12), eyeMat);
-    eye.position.set(0.28, 0.14, 0.42);
-    this.player.add(eye);
+    // Player: a procedural little character built from the equipped skin.
+    this.character = new Character(equippedSkin());
+    this.player = this.character.group;
     this.scene.add(this.player);
 
     this.playerLight = new THREE.PointLight(pal.accent, 9, 14, 2);
@@ -135,19 +123,16 @@ export class Renderer3D {
     this.contact.rotation.x = -Math.PI / 2;
     this.scene.add(this.contact);
 
-    // Ghosts of friends' runs (translucent, colour-coded, reused round-robin).
+    // Ghosts of friends' runs: translucent characters, colour-coded, reused
+    // round-robin. Each cycles a skin archetype so they read as distinct people.
     const GHOST_COLORS = [0xff6b9d, 0xffd23c, 0x6bffb0, 0x6b9dff, 0xd26bff];
     for (let i = 0; i < 5; i++) {
-      const m = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(0.55, 2),
-        new THREE.MeshStandardMaterial({
-          color: GHOST_COLORS[i], emissive: GHOST_COLORS[i], emissiveIntensity: 0.25,
-          transparent: true, opacity: 0.32, depthWrite: false,
-        }),
-      );
-      m.visible = false;
-      this.ghostPool.push(m);
-      this.scene.add(m);
+      const base = SKINS[(i + 1) % SKINS.length];
+      const ghostSkin: Skin = { ...base, body: GHOST_COLORS[i], accent: GHOST_COLORS[i] };
+      const c = new Character(ghostSkin, { ghost: true });
+      c.setVisible(false);
+      this.ghostChars.push(c);
+      this.scene.add(c.group);
     }
 
     // Trail (a ring of fading quads reused round-robin).
@@ -452,17 +437,14 @@ export class Renderer3D {
   }
 
   updatePlayer(x: number, y: number, z: number, spin: number, vy = 0, grounded = false, speed = 10.5) {
-    this.player.position.set(x, y, z);
-    this.player.rotation.x = spin;
+    this.player.position.set(x, y - 0.2, z);
     this.playerLight.position.set(x, y + 1.2, z);
 
     // Speed → 0..1 (10.5 base .. ~16 top) drives FOV, streaks and the vignette.
     const target = Math.max(0, Math.min(1, (speed - 10.5) / 5.5));
     this.speedNorm += (target - this.speedNorm) * 0.08;
 
-    // Squash-and-stretch (visual only, does not touch the sim). Landing after a
-    // fast descent triggers a squash that eases back out; airborne = slight
-    // stretch along the fall axis.
+    // Squash-and-stretch on landing (visual only, does not touch the sim).
     const landed = grounded && this.lastY - y > 0.02 && vy <= 0.1;
     if (landed) {
       const impact = Math.abs(this.lastY - y);
@@ -473,10 +455,10 @@ export class Renderer3D {
       }
     }
     this.squash *= 0.82;
-    const airStretch = !grounded ? Math.min(0.12, Math.abs(vy) * 0.012) : 0;
-    const sy = 1 - this.squash + airStretch;
-    const sxz = 1 + this.squash * 0.5 - airStretch * 0.5;
-    this.body.scale.set(sxz, Math.max(0.5, sy), sxz);
+    // Lean into lateral movement; pose the running character.
+    const lean = Math.max(-1, Math.min(1, (x - this.lastX) * 3));
+    this.character.setPose(spin, grounded, lean, this.squash);
+    this.lastX = x;
     this.lastY = y;
 
     // Contact shadow: fades + shrinks as the player rises off the floor.
@@ -563,12 +545,18 @@ export class Renderer3D {
     }
   }
 
-  /** Position the ghost pool from an array of {x,y,z}; hides the rest. */
+  /** Position + animate the ghost characters from an array of {x,y,z}. */
   setGhosts(positions: ({ x: number; y: number; z: number } | null)[]) {
-    this.ghostPool.forEach((m, i) => {
+    this.ghostChars.forEach((c, i) => {
       const p = positions[i];
-      if (p) { m.visible = true; m.position.set(p.x, p.y, p.z); }
-      else m.visible = false;
+      if (p) {
+        c.setVisible(true);
+        c.group.position.set(p.x, p.y - 0.2, p.z);
+        // Run cadence from distance travelled; airborne if lifted off the floor.
+        c.setPose(p.z * 1.4, p.y < 0.95, 0, 0);
+      } else {
+        c.setVisible(false);
+      }
     });
   }
 
@@ -578,6 +566,8 @@ export class Renderer3D {
       this.container.removeChild(this.renderer.domElement);
     }
     this.composer.dispose();
+    this.character.dispose();
+    for (const c of this.ghostChars) c.dispose();
     this.fxSpeed.remove();
     this.fxFlash.remove();
   }

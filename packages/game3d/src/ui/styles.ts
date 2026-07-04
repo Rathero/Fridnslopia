@@ -52,7 +52,8 @@ export function injectStyles() {
   .ok { color: #6bffab; font-size: 13px; min-height: 18px; margin: 4px 0; }
   .skin { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid #24304e;
     border-radius: 12px; margin: 8px 0; }
-  .swatch { width: 34px; height: 34px; border-radius: 50%; flex: none; }
+  .swatch { width: 34px; height: 34px; border-radius: 50%; flex: none; display: flex;
+    align-items: center; justify-content: center; font-size: 18px; }
   .skin .grow { flex: 1; }
   .trapmap { width: 100%; background: #0a1120; border-radius: 10px; margin: 10px 0; display: block; }
   .center { text-align: center; }

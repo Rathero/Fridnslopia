@@ -642,14 +642,14 @@ export class Overlay {
           ? `<button class="btn ghost" data-equip="${s.id}" style="width:auto;margin:0;padding:8px 12px">Equipar</button>`
           : `<button class="btn" data-buy="${s.id}" style="width:auto;margin:0;padding:8px 12px">${(s.price / 100).toFixed(2)}€</button>`;
       return `<div class="skin">
-        <div class="swatch" style="background:#${s.body.toString(16).padStart(6, '0')}"></div>
-        <div class="grow"><b>${s.name}</b></div>
+        <div class="swatch" style="background:#${s.body.toString(16).padStart(6, '0')}">${s.emoji}</div>
+        <div class="grow"><b>${s.name}</b><div class="muted" style="font-size:11px">${accessoryLabel(s.accessory)}</div></div>
         ${btn}
       </div>`;
     }).join('');
     this.card.innerHTML = `
       <h2>Tienda</h2>
-      <p class="muted">Solo cosméticos. Compra directa, sin cajas de botín.</p>
+      <p class="muted">Personajes. Compra directa, solo cosmético, sin cajas de botín.</p>
       ${rows}
       <button class="btn ghost" id="back">← Volver</button>
     `;
@@ -760,6 +760,16 @@ function renderTrapMap(course: Course3D): string {
 function parseFloatSafe(s: string): number {
   const n = parseFloat(s);
   return Number.isFinite(n) ? n : 0;
+}
+
+function accessoryLabel(a: string): string {
+  return (
+    {
+      none: 'básico', cap: 'con gorra', crown: 'con corona', horns: 'con cuernos',
+      antenna: 'con antena', halo: 'con aureola', visor: 'con visor',
+      headphones: 'con cascos', mohawk: 'con cresta',
+    } as Record<string, string>
+  )[a] ?? '';
 }
 
 function escapeHtml(s: string): string {
