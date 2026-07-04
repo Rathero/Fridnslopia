@@ -18,5 +18,6 @@ export {
   verifyCourse3D,
   verifyTrapPlacement3D,
   generateVerifiedCourse3D,
+  generateVerifiedCourse3DAsync,
 } from './verifier3d.js';
 export type { VerifyResult3D } from './verifier3d.js';

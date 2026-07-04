@@ -1,11 +1,11 @@
 import {
-  assembleCourse,
-  generateVerifiedCourse,
+  assembleCourse3D,
+  generateVerifiedCourse3DAsync,
   seedFromString,
-  type Course,
+  type Course3D,
   type DailyConfig,
-  type PlacedTrap,
-  type TrapType,
+  type PlacedTrap3D,
+  type TrapType3D,
 } from '@trampa/shared';
 import { query } from '../db.js';
 import { getDailyConfig } from './llmService.js';
@@ -34,10 +34,12 @@ export async function getOrCreateTodayCourse(
   if (existing) return existing;
 
   // Derive a stable seed from the league + date, then generate + verify.
-  const dailySeed = seedFromString(`${leagueId ?? 'global'}:${playDate}`);
+  const baseSeed = seedFromString(`${leagueId ?? 'global'}:${playDate}`);
   const recentThemes = await recentThemesFor(leagueId, playDate);
   const config = await getDailyConfig({ date: playDate, recentThemes });
-  const { verified } = generateVerifiedCourse(dailySeed, config);
+  // Re-sample deterministically until the course is provably completable, then
+  // persist the seed actually used so everyone rebuilds the identical course.
+  const { seed: dailySeed, verified } = await generateVerifiedCourse3DAsync(baseSeed, config);
 
   try {
     const { rows } = await query<DailyCourseRow>(
@@ -57,9 +59,9 @@ export async function getOrCreateTodayCourse(
   }
 }
 
-/** Deterministically rebuild the playable Course from a stored row. */
-export function buildCourseFromRow(row: DailyCourseRow): Course {
-  return assembleCourse(Number(row.daily_seed), row.config);
+/** Deterministically rebuild the playable 3D Course from a stored row. */
+export function buildCourseFromRow(row: DailyCourseRow): Course3D {
+  return assembleCourse3D(Number(row.daily_seed), row.config);
 }
 
 /**
@@ -71,7 +73,7 @@ export function buildCourseFromRow(row: DailyCourseRow): Course {
 export async function getPlacedTraps(
   courseId: string,
   cap?: number,
-): Promise<PlacedTrap[]> {
+): Promise<PlacedTrap3D[]> {
   const { rows } = await query<{
     slot_x: number;
     slot_y: number;
@@ -89,8 +91,8 @@ export async function getPlacedTraps(
   );
   return rows.map((r) => ({
     slotX: r.slot_x,
-    slotY: r.slot_y,
-    trapType: r.trap_type as TrapType,
+    slotZ: r.slot_y, // the slot_y column stores the Z lane-position in 3D
+    trapType: r.trap_type as TrapType3D,
     userId: r.user_id,
     ownerHandle: r.handle,
   }));

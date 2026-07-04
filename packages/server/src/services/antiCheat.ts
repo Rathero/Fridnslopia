@@ -1,9 +1,9 @@
 import {
-  simulateRun,
-  type Course,
-  type InputLog,
-  type PlacedTrap,
-  type SimResult,
+  simulateRun3D,
+  type Course3D,
+  type InputLog3D,
+  type PlacedTrap3D,
+  type SimResult3D,
 } from '@trampa/shared';
 
 /** Tolerance (ms) allowed between the claimed and recomputed finish time. */
@@ -15,7 +15,7 @@ export interface VerifyRunResult {
   finished: boolean;
   reason?: string;
   /** Full sim result (with deaths) so callers can drive trap-hit accounting. */
-  sim: SimResult;
+  sim: SimResult3D;
 }
 
 /**
@@ -25,12 +25,12 @@ export interface VerifyRunResult {
  * claimed time within tolerance. The authoritative time is the recomputed one.
  */
 export async function verifyRun(
-  course: Course,
-  inputLog: InputLog,
+  course: Course3D,
+  inputLog: InputLog3D,
   claimedTimeMs: number,
-  placedTraps: PlacedTrap[] = [],
+  placedTraps: PlacedTrap3D[] = [],
 ): Promise<VerifyRunResult> {
-  const sim = await simulateRun(course, inputLog, placedTraps, { recordFrames: true });
+  const sim = await simulateRun3D(course, inputLog, placedTraps, { recordFrames: true });
   const recomputedTimeMs = sim.timeMs;
 
   if (!sim.finished) {

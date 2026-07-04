@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import {
-  generateVerifiedCourse,
+  generateVerifiedCourse3DAsync,
   seedFromString,
   type DailyConfig,
 } from '@trampa/shared';
@@ -91,9 +91,9 @@ export async function getOrCreateRoomCourse(
   const existing = await selectRoomCourse(room.id, idx);
   if (existing) return existing;
 
-  const dailySeed = seedFromString(`room:${room.id}:${idx}`);
+  const baseSeed = seedFromString(`room:${room.id}:${idx}`);
   const config: DailyConfig = await getDailyConfig({ date: `${room.code}-${idx}`, recentThemes: [] });
-  const { verified } = generateVerifiedCourse(dailySeed, config);
+  const { seed: dailySeed, verified } = await generateVerifiedCourse3DAsync(baseSeed, config);
 
   try {
     const { rows } = await query<DailyCourseRow>(

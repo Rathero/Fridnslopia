@@ -34,23 +34,36 @@ export function autopilot3d(course: Course3D, placedTraps: PlacedTrap3D[] = []):
       if (floorAt(p.x, p.z + 0.6) && !floorAt(p.x, p.z + 3.4)) {
         rec('J');
       } else {
-        const blocked = (x: number): boolean => {
-          if (!floorAt(x, p.z + 3.5)) return true;
+        // Score each reachable lane by how "unsafe" it is: obstacles within the
+        // lookahead penalise a lane in proportion to how SOON we'd reach them
+        // (closer = worse). This makes the bot dodge the IMMINENT obstacle even
+        // when a later, staggered one also conflicts — instead of freezing at
+        // centre (which killed it on chicanes). A lane with no floor is out.
+        const margin = 0.62; // ~player radius
+        const score = (x: number): number => {
+          if (!floorAt(x, p.z + 3.2) || !floorAt(x, p.z + 5)) return Infinity;
+          let penalty = 0;
           for (const o of course.obstacles) {
-            if (o.z <= p.z + 0.5 || o.z >= p.z + 9) continue;
-            for (const df of [4, 9, 14, 20]) {
+            const dz = o.z - p.z;
+            if (dz <= 0.4 || dz > 8) continue;
+            for (const df of [3, 8, 13]) {
               const b = obstacleAABB(o, sim.frame + df);
-              if (x > b.minX - 0.7 && x < b.maxX + 0.7) return true;
+              if (x > b.minX - margin && x < b.maxX + margin) {
+                penalty += 10 / dz; // the nearer the obstacle, the worse
+                break;
+              }
             }
           }
-          return false;
+          return penalty;
         };
-        const clear = lanes
-          .filter((x) => !blocked(x))
-          .sort((a, b) => Math.abs(a - p.x) - Math.abs(b - p.x) || Math.abs(a) - Math.abs(b));
-        const target = clear.length ? clear[0] : 0;
-        if (target > p.x + 0.35) rec('R');
-        else if (target < p.x - 0.35) rec('L');
+        let best = 0;
+        let bestScore = Infinity;
+        for (const x of lanes) {
+          const s = score(x) + Math.abs(x - p.x) * 0.05 + Math.abs(x) * 0.02;
+          if (s < bestScore) { bestScore = s; best = x; }
+        }
+        if (best > p.x + 0.35) rec('R');
+        else if (best < p.x - 0.35) rec('L');
       }
     }
     sim.step();

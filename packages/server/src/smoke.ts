@@ -9,7 +9,7 @@
  * tampered time is rejected, places a trap, and reads the leaderboard, ghosts
  * and shared streak. Exits non-zero on any failure.
  */
-import { autopilot, initRapier, type InputLog } from '@trampa/shared';
+import { autopilot3d, initRapier3D, type InputLog3D } from '@trampa/shared';
 import { PORT } from './env.js';
 
 const API = process.env.SMOKE_API ?? `http://localhost:${PORT}`;
@@ -26,7 +26,7 @@ async function call<T>(path: string, opts: RequestInit = {}): Promise<T> {
 }
 
 async function main() {
-  await initRapier();
+  await initRapier3D();
   const stamp = Date.now().toString(36);
   const handleA = `smoke_a_${stamp}`;
   const handleB = `smoke_b_${stamp}`;
@@ -51,7 +51,7 @@ async function main() {
   assert(today.verified, 'daily course must be verified');
 
   console.log('· autopilot run');
-  const run = autopilot(today.course, today.traps);
+  const run = autopilot3d(today.course, today.traps);
   assert(run.finished, 'autopilot must finish the course');
 
   console.log('· submitting valid run (A)');
@@ -61,7 +61,7 @@ async function main() {
       courseId: today.courseId,
       handle: handleA,
       timeMs: run.timeMs,
-      inputLog: run.log as InputLog,
+      inputLog: run.log as InputLog3D,
     }),
   });
   assert(subA.ok && subA.timeMs === run.timeMs, 'valid run must be accepted with matching time');
@@ -104,7 +104,7 @@ async function main() {
         courseId: today.courseId,
         handle: handleA,
         slotX: slot.x,
-        slotY: slot.y,
+        slotZ: slot.z,
         trapType: 'spike',
       }),
     });

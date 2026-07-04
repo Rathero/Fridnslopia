@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { InputLog } from '@trampa/shared';
+import type { InputLog3D } from '@trampa/shared';
 import { query } from '../db.js';
 import { asyncHandler, badRequest, notFound } from '../utils/http.js';
 import { todayString } from '../utils/dates.js';
@@ -120,11 +120,11 @@ async function currentRank(courseId: string, timeMs: number): Promise<number> {
   return Number(rows[0]?.n ?? 0) + 1;
 }
 
-function isInputLog(v: unknown): v is InputLog {
+function isInputLog(v: unknown): v is InputLog3D {
   return (
     typeof v === 'object' &&
     v !== null &&
-    typeof (v as InputLog).seed === 'number' &&
-    Array.isArray((v as InputLog).events)
+    typeof (v as InputLog3D).seed === 'number' &&
+    Array.isArray((v as InputLog3D).events)
   );
 }

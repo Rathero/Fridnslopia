@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { verifyTrapPlacement, type TrapType } from '@trampa/shared';
+import { verifyTrapPlacement3D, type TrapType3D } from '@trampa/shared';
 import { query } from '../db.js';
 import { asyncHandler, badRequest, notFound } from '../utils/http.js';
 import { resolveUserId } from '../services/userService.js';
@@ -11,21 +11,25 @@ import {
 
 export const trapsRouter = Router();
 
-const VALID_TRAP_TYPES: TrapType[] = ['spike', 'bounce', 'glue'];
+const VALID_TRAP_TYPES: TrapType3D[] = ['spike', 'bounce', 'glue'];
 
 /**
  * POST /traps — place (or move) this player's single trap on a course.
- * Body: { courseId, userId? | handle?, slotX, slotY, trapType }
- * Validated against the course's authored slots + completability (spec §4.3).
+ * Body: { courseId, userId? | handle?, slotX, slotZ, trapType }
+ * (slotX = lateral lane, slotZ = position along the course.) Validated against
+ * the course's authored slots + the 1-trap-per-player rule. The DB `slot_y`
+ * column stores slotZ.
  */
 trapsRouter.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { courseId, userId, handle, slotX, slotY, trapType } = req.body ?? {};
+    const { courseId, userId, handle, slotX, trapType } = req.body ?? {};
+    // Accept slotZ (3D); fall back to slotY for older clients.
+    const slotZ = typeof req.body?.slotZ === 'number' ? req.body.slotZ : req.body?.slotY;
 
     if (!courseId || typeof courseId !== 'string') throw badRequest('courseId is required');
-    if (typeof slotX !== 'number' || typeof slotY !== 'number') {
-      throw badRequest('slotX and slotY (numbers) are required');
+    if (typeof slotX !== 'number' || typeof slotZ !== 'number') {
+      throw badRequest('slotX and slotZ (numbers) are required');
     }
     if (!VALID_TRAP_TYPES.includes(trapType)) {
       throw badRequest(`trapType must be one of ${VALID_TRAP_TYPES.join(', ')}`);
@@ -36,16 +40,14 @@ trapsRouter.post(
     const course = buildCourseFromRow(row);
 
     const uid = await resolveUserId({ userId, handle });
-
-    // Existing traps excluding this player's own (so re-placing is allowed).
     const existing = (await getPlacedTraps(row.id)).filter((t) => t.userId !== uid);
 
-    const verdict = verifyTrapPlacement(course, { slotX, slotY, userId: uid }, existing);
+    const verdict = verifyTrapPlacement3D(course, { slotX, slotZ, userId: uid }, existing);
     if (!verdict.ok) {
       return res.status(400).json({ ok: false, reason: verdict.reason });
     }
 
-    // One trap per player per course — upsert onto the unique (course, user).
+    // One trap per player per course — slot_y column holds slotZ.
     await query(
       `insert into traps (course_id, user_id, slot_x, slot_y, trap_type)
        values ($1, $2, $3, $4, $5)
@@ -54,10 +56,10 @@ trapsRouter.post(
                      slot_y = excluded.slot_y,
                      trap_type = excluded.trap_type,
                      hits = 0`,
-      [row.id, uid, slotX, slotY, trapType],
+      [row.id, uid, slotX, slotZ, trapType],
     );
 
-    return res.status(201).json({ ok: true, slotX, slotY, trapType });
+    return res.status(201).json({ ok: true, slotX, slotZ, trapType });
   }),
 );
 

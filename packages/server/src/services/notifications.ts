@@ -1,4 +1,4 @@
-import type { Course, PlacedTrap, SimResult } from '@trampa/shared';
+import type { Course3D, PlacedTrap3D, SimResult3D } from '@trampa/shared';
 import { query } from '../db.js';
 
 /** Notification categories emitted by the backend (spec §3 / M5). */
@@ -50,10 +50,10 @@ const TRAP_HIT_RADIUS = 1.6;
  * notify its owner. Best-effort — never throws.
  */
 export async function processTrapHits(
-  course: Course,
-  sim: SimResult,
+  course: Course3D,
+  sim: SimResult3D,
   runnerUserId: string,
-  placedTraps: PlacedTrap[],
+  placedTraps: PlacedTrap3D[],
 ): Promise<void> {
   try {
     if (sim.deaths <= 0 || sim.frames.length === 0) return;
@@ -63,7 +63,7 @@ export async function processTrapHits(
       const near = sim.frames.some(
         (f) =>
           Math.abs(f.x - trap.slotX) <= TRAP_HIT_RADIUS &&
-          Math.abs(f.y - trap.slotY) <= TRAP_HIT_RADIUS,
+          Math.abs(f.z - trap.slotZ) <= TRAP_HIT_RADIUS,
       );
       if (!near) continue;
 
@@ -71,13 +71,13 @@ export async function processTrapHits(
         `update traps set hits = hits + 1
           where course_id = $1 and user_id = $2 and slot_x = $3 and slot_y = $4
           returning hits`,
-        [courseIdOf(course), trap.userId, trap.slotX, trap.slotY],
+        [courseIdOf(course), trap.userId, trap.slotX, trap.slotZ],
       );
       const hits = rows[0]?.hits ?? undefined;
       await notify(trap.userId, 'trap_hit', {
         courseSeed: course.seed,
         slotX: trap.slotX,
-        slotY: trap.slotY,
+        slotZ: trap.slotZ,
         trapType: trap.trapType,
         byUserId: runnerUserId,
         totalHits: hits,
@@ -128,11 +128,11 @@ export async function processOvertakes(
  * The Course carries a numeric seed, not the DB row id, so trap-hit updates
  * need the course id passed in. We stash it via a WeakMap keyed by course.
  */
-const courseIdMap = new WeakMap<Course, string>();
-export function tagCourseId(course: Course, courseId: string): void {
+const courseIdMap = new WeakMap<Course3D, string>();
+export function tagCourseId(course: Course3D, courseId: string): void {
   courseIdMap.set(course, courseId);
 }
-function courseIdOf(course: Course): string {
+function courseIdOf(course: Course3D): string {
   const id = courseIdMap.get(course);
   if (!id) throw new Error('course id not tagged; call tagCourseId first');
   return id;

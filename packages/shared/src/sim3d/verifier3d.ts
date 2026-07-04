@@ -1,4 +1,6 @@
 import { assembleCourse3D, type Course3D, type PlacedTrap3D } from './course3d.js';
+import { autopilot3d } from './autopilot3d.js';
+import { initRapier3D } from './sim3d.js';
 import type { DailyConfig } from '../llm/schema.js';
 
 export interface VerifyResult3D { ok: boolean; reason?: string }
@@ -17,13 +19,37 @@ export function verifyCourse3D(course: Course3D): VerifyResult3D {
   return { ok: true };
 }
 
-/** Assemble + verify a daily 3D course (always returns a course). */
+/** Assemble + structurally verify a daily 3D course (always returns a course). */
 export function generateVerifiedCourse3D(
   seed: number,
   config: DailyConfig,
 ): { course: Course3D; verified: boolean } {
   const course = assembleCourse3D(seed, config);
   return { course, verified: verifyCourse3D(course).ok };
+}
+
+/**
+ * Generate a course that is actually COMPLETABLE, using the autopilot as the
+ * oracle: re-sample the seed (deterministically) until a run finishes, so the
+ * daily/room circuit is fair for the whole lobby. Returns the seed that was
+ * finally used — the caller MUST store it so everyone rebuilds the same course.
+ */
+export async function generateVerifiedCourse3DAsync(
+  seed: number,
+  config: DailyConfig,
+  maxAttempts = 10,
+): Promise<{ course: Course3D; seed: number; verified: boolean }> {
+  await initRapier3D();
+  let s = seed >>> 0;
+  for (let i = 0; i < maxAttempts; i++) {
+    const course = assembleCourse3D(s, config);
+    if (verifyCourse3D(course).ok && autopilot3d(course).finished) {
+      return { course, seed: s, verified: true };
+    }
+    s = (s + 0x9e3779b1) >>> 0; // advance deterministically and retry
+  }
+  const course = assembleCourse3D(seed >>> 0, config);
+  return { course, seed: seed >>> 0, verified: false };
 }
 
 /**
