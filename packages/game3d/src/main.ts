@@ -150,8 +150,10 @@ function showPopup(text: string) {
 const active = () => running && countdownMs <= 0;
 
 // PC: arrows/A-D held = steer; hold longer to move further. Shift = precision.
+// The aerial camera looks toward +Z, so screen-right is world -X — hence the
+// left/right mapping is inverted here so pressing right moves you right.
 function recomputeSteer() {
-  const dir = (rightHeld ? 1 : 0) - (leftHeld ? 1 : 0);
+  const dir = (leftHeld ? 1 : 0) - (rightHeld ? 1 : 0);
   steer = dir * (shiftHeld ? 45 : 100);
 }
 addEventListener('keydown', (e) => {
@@ -183,8 +185,8 @@ addEventListener('pointerdown', (e) => {
 addEventListener('pointermove', (e) => {
   if (e.pointerId !== stickId) return;
   const dx = Math.max(-STICK_R, Math.min(STICK_R, e.clientX - stickCx));
-  knobEl.style.transform = `translate(${dx}px,0)`;
-  steer = Math.round((dx / STICK_R) * 100 / 5) * 5;
+  knobEl.style.transform = `translate(${dx}px,0)`; // knob follows the finger
+  steer = -Math.round((dx / STICK_R) * 100 / 5) * 5; // inverted: screen-right = world -X
 });
 function endStick(e: PointerEvent) {
   if (e.pointerId !== stickId) return;
