@@ -1,49 +1,78 @@
 import { initRapier, Sim3D, FIXED_DT, obstacleAABB } from './sim.js';
 import { makeCourse, type Course3D } from './course.js';
 import { Renderer3D } from './render.js';
+import { Ui, hexColor } from './ui.js';
 
 const app = document.getElementById('app')!;
 const timeEl = document.getElementById('time')!;
 const subEl = document.getElementById('sub')!;
-const banner = document.getElementById('banner')!;
-const btitle = document.getElementById('btitle')!;
-const bsub = document.getElementById('bsub')!;
-const bbtn = document.getElementById('bbtn')!;
 
 const AUTOPLAY = new URLSearchParams(location.search).has('autoplay');
-const SEED = Number(new URLSearchParams(location.search).get('seed') ?? 20260704);
+// Daily-style fixed seed: stable for everyone on a given build unless overridden.
+const DAILY_SEED = 20260704;
+const SEED = Number(new URLSearchParams(location.search).get('seed') ?? DAILY_SEED);
 
 type GhostFrames = { x: number; y: number; z: number }[];
+type Mode = 'menu' | 'run' | 'result';
 
 let sim: Sim3D;
 let course: Course3D;
 let renderer: Renderer3D;
-let raf = 0;
+let ui: Ui;
+let mode: Mode = 'menu';
 let acc = 0;
 let last = 0;
 const pending: ('L' | 'R' | 'J')[] = [];
 let recording: GhostFrames = [];
 let ghostFrames: GhostFrames | null = null;
-let ended = false;
 
 async function boot() {
   await initRapier();
   course = makeCourse(SEED);
   renderer = new Renderer3D(app, course);
-  start();
+  ui = new Ui(hexColor(course.palette.accent));
+  sim = new Sim3D(course);
+  subEl.textContent = `TRAMPA 3D · ${course.theme}`;
+
+  if (AUTOPLAY) {
+    startRun();
+  } else {
+    showMenu();
+  }
   requestAnimationFrame(loop);
 }
 
-function start() {
+function showMenu() {
+  mode = 'menu';
+  ui.showMenu(course.theme, () => startRun());
+}
+
+function startRun() {
   if (sim) sim.free();
   sim = new Sim3D(course);
   acc = 0;
   last = 0;
-  ended = false;
   pending.length = 0;
   recording = [];
-  banner.style.display = 'none';
-  subEl.textContent = `TRAMPA 3D · ${course.theme}`;
+  mode = 'run';
+}
+
+function showResult() {
+  mode = 'result';
+  ui.showResult(
+    { finished: sim.finished, timeMs: sim.timeMs(), deaths: sim.deaths },
+    {
+      onReplay: () => {
+        // Race your previous run as a ghost.
+        if (recording.length) ghostFrames = recording;
+        startRun();
+      },
+      onMenu: () => {
+        ghostFrames = null;
+        showMenu();
+      },
+    },
+  );
 }
 
 // ---- input ----
@@ -56,11 +85,6 @@ addEventListener('keydown', (e) => {
 document.getElementById('zl')!.addEventListener('pointerdown', () => pending.push('L'));
 document.getElementById('zr')!.addEventListener('pointerdown', () => pending.push('R'));
 document.getElementById('zj')!.addEventListener('pointerdown', () => pending.push('J'));
-bbtn.addEventListener('click', () => {
-  // Race your previous run as a ghost.
-  if (recording.length) ghostFrames = recording;
-  start();
-});
 
 // ---- autoplay bot: dodge obstacles, jump gaps, stay on narrow floor ----
 function botDecide() {
@@ -97,34 +121,41 @@ function botDecide() {
 
 // ---- loop ----
 function loop(t: number) {
-  raf = requestAnimationFrame(loop);
+  requestAnimationFrame(loop);
   if (!last) last = t;
   const dt = Math.min((t - last) / 1000, 0.1);
   last = t;
-  acc += dt;
 
-  while (acc >= FIXED_DT) {
-    if (AUTOPLAY && !ended) botDecide();
-    for (const m of pending) {
-      if (m === 'L') sim.moveLeft();
-      else if (m === 'R') sim.moveRight();
-      else sim.jump();
+  if (mode === 'run') {
+    acc += dt;
+    while (acc >= FIXED_DT) {
+      if (AUTOPLAY) botDecide();
+      for (const m of pending) {
+        if (m === 'L') sim.moveLeft();
+        else if (m === 'R') sim.moveRight();
+        else sim.jump();
+      }
+      pending.length = 0;
+
+      sim.step();
+      recording.push(cameralessPos());
+      acc -= FIXED_DT;
+
+      if (sim.finished || sim.frame > 60 * 150) {
+        showResult();
+        break;
+      }
     }
+  } else {
+    // Not simulating; drain any stray input so it doesn't queue up.
     pending.length = 0;
-
-    sim.step();
-    recording.push({ ...cameralessPos() });
-    acc -= FIXED_DT;
-
-    if (!ended && (sim.finished || sim.frame > 60 * 150)) finish();
-    if (ended) break;
   }
 
   const p = sim.getPlayer();
   renderer.updateDynamic(sim.frame);
-  renderer.updatePlayer(p.x, p.y, p.z, p.spin);
+  renderer.updatePlayer(p.x, p.y, p.z, p.spin, p.vy, p.grounded);
 
-  if (ghostFrames) {
+  if (ghostFrames && mode === 'run') {
     const g = ghostFrames[Math.min(sim.frame, ghostFrames.length - 1)];
     if (g) renderer.setGhost(g.x, g.y, g.z, true);
   } else {
@@ -138,16 +169,6 @@ function loop(t: number) {
 function cameralessPos() {
   const p = sim.getPlayer();
   return { x: p.x, y: p.y, z: p.z };
-}
-
-function finish() {
-  ended = true;
-  const finished = sim.finished;
-  btitle.textContent = finished ? '¡META!' : 'FIN';
-  bsub.innerHTML = finished
-    ? `Tiempo <b>${(sim.timeMs() / 1000).toFixed(2)}s</b> · ${sim.deaths} caídas<br/>Dale otra y córrete contra tu fantasma.`
-    : 'No llegaste. Otra vez.';
-  banner.style.display = 'flex';
 }
 
 boot();

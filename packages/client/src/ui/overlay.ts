@@ -6,12 +6,19 @@ import {
   type PlacedTrap,
   type TrapType,
 } from '@trampa/shared';
-import { api, type LeaderboardEntry } from '../net/api.js';
+import {
+  api,
+  type LeaderboardEntry,
+  type SaboteurEntry,
+  type RoomState,
+  type RoomStanding,
+} from '../net/api.js';
 import {
   getHandle,
   setHandle,
   getLeagueId,
   setLeagueId,
+  getUserId,
   setUserId,
 } from '../config.js';
 import { SKINS, ownedSkins, ownSkin, equipSkin, equippedSkin } from '../cosmetics.js';
@@ -80,6 +87,8 @@ export class Overlay {
       <label>Tu nombre</label>
       <input id="handle" placeholder="p.ej. rubén" value="${escapeAttr(handle)}" maxlength="16" />
       <button class="btn" id="daily">▶ Jugar circuito de hoy</button>
+      <button class="btn secondary" id="global">🌍 Reto diario global</button>
+      <button class="btn secondary" id="rooms">📺 Salas</button>
       <button class="btn secondary" id="quick">Partida rápida (offline)</button>
       <div class="row">
         <button class="btn ghost" id="league">Liga</button>
@@ -93,6 +102,14 @@ export class Overlay {
     this.$('#daily').addEventListener('click', () => {
       setHandle(handleInput.value.trim());
       this.playDaily();
+    });
+    this.$('#global').addEventListener('click', () => {
+      setHandle(handleInput.value.trim());
+      this.playGlobal();
+    });
+    this.$('#rooms').addEventListener('click', () => {
+      setHandle(handleInput.value.trim());
+      this.showRooms();
     });
     this.$('#quick').addEventListener('click', () => {
       setHandle(handleInput.value.trim());
@@ -123,6 +140,34 @@ export class Overlay {
         placedTraps: today.traps,
         ghosts,
         online: true,
+        playDate: today.playDate,
+      });
+    } catch (e: any) {
+      this.showMenu().then(() => this.err(`No se pudo conectar: ${e.message}. Prueba partida rápida.`));
+    }
+  }
+
+  private async playGlobal() {
+    const handle = getHandle();
+    if (!handle) return this.err('Escribe tu nombre primero.');
+
+    this.loading('Generando el reto global de hoy…');
+    try {
+      const today = await api.today(null);
+      const ghostsRaw = await api.ghosts(today.courseId, handle).catch(() => []);
+      const ghosts = await prepareGhosts(
+        today.course,
+        ghostsRaw.map((g) => ({ handle: g.handle, timeMs: g.timeMs, inputLog: g.inputLog })),
+        today.traps,
+      );
+      this.startRun({
+        course: today.course,
+        courseId: today.courseId,
+        placedTraps: today.traps,
+        ghosts,
+        online: true,
+        mode: 'global',
+        shareable: true,
         playDate: today.playDate,
       });
     } catch (e: any) {
@@ -161,10 +206,7 @@ export class Overlay {
         <button class="btn secondary" id="menu">Menú</button>
       </div>
     `;
-    this.$('#retry').addEventListener('click', () => {
-      if (r.online) this.playDaily();
-      else this.playQuick();
-    });
+    this.$('#retry').addEventListener('click', () => this.retryRun(r));
     this.$('#menu').addEventListener('click', () => this.showMenu());
 
     const post = this.$('#post');
@@ -174,7 +216,7 @@ export class Overlay {
       return;
     }
 
-    // Online: submit run, show leaderboard + trap placement.
+    // Online: submit run, show leaderboard + saboteur ranking + context extras.
     if (r.finished && r.courseId) {
       post.innerHTML = '<p class="muted">Enviando tiempo…</p>';
       try {
@@ -185,17 +227,85 @@ export class Overlay {
           inputLog: r.inputLog,
         });
         const lb = await api.leaderboard(r.courseId).catch(() => [] as LeaderboardEntry[]);
+        const sab = await api.saboteurs(r.courseId).catch(() => [] as SaboteurEntry[]);
         post.innerHTML =
           `<p class="ok">Verificado ✓ Posición #${res.rank}</p>` +
           renderLeaderboard(lb, getHandle()) +
-          this.trapSectionHtml(r.course);
-        this.wireTrapSection(r);
+          renderSaboteurs(sab) +
+          this.resultExtrasHtml(r);
+        this.wireResultExtras(r);
       } catch (e: any) {
         post.innerHTML = `<p class="err">Rechazado: ${e.message}</p>`;
       }
     } else if (r.courseId) {
-      post.innerHTML = `<p class="err">No terminaste — no cuenta para el ranking.</p>` + this.trapSectionHtml(r.course);
-      this.wireTrapSection(r);
+      post.innerHTML =
+        `<p class="err">No terminaste — no cuenta para el ranking.</p>` +
+        this.resultExtrasHtml(r);
+      this.wireResultExtras(r);
+    }
+  }
+
+  /** Route a "retry" from the result screen back to the right flow. */
+  private retryRun(r: RunResult) {
+    if (r.mode === 'global') this.playGlobal();
+    else if (r.mode === 'room' && r.roomId) {
+      this.playRoomCourse(r.roomId, r.roomIdx ?? 0, r.numCourses ?? 1);
+    } else if (r.online) this.playDaily();
+    else this.playQuick();
+  }
+
+  /** Context-specific section under the leaderboard (share / room nav / traps). */
+  private resultExtrasHtml(r: RunResult): string {
+    if (r.mode === 'room') {
+      const idx = r.roomIdx ?? 0;
+      const total = r.numCourses ?? 1;
+      const next =
+        idx + 1 < total
+          ? '<button class="btn" id="nextCircuit">Siguiente circuito</button>'
+          : '';
+      return `
+        <div class="space"></div>
+        ${next}
+        <button class="btn secondary" id="backToRoom">Volver a la sala</button>
+        ${this.trapSectionHtml(r.course)}
+      `;
+    }
+    const share = r.shareable
+      ? '<button class="btn secondary" id="share">🔗 Compartir mi tiempo</button><div class="ok" id="shareMsg"></div>'
+      : '';
+    return share + this.trapSectionHtml(r.course);
+  }
+
+  /** Wire whatever resultExtrasHtml rendered. */
+  private wireResultExtras(r: RunResult) {
+    this.wireTrapSection(r);
+
+    const nextBtn = this.card.querySelector('#nextCircuit');
+    if (nextBtn && r.mode === 'room' && r.roomId) {
+      nextBtn.addEventListener('click', () =>
+        this.playRoomCourse(r.roomId!, (r.roomIdx ?? 0) + 1, r.numCourses ?? 1),
+      );
+    }
+    const backRoom = this.card.querySelector('#backToRoom');
+    if (backRoom && r.roomId) {
+      backRoom.addEventListener('click', () => this.showRoom(r.roomId!));
+    }
+
+    const shareBtn = this.card.querySelector('#share');
+    if (shareBtn && r.shareable && r.courseId) {
+      shareBtn.addEventListener('click', () => {
+        const url = api.shareCardUrl(r.courseId!, getHandle());
+        window.open(url, '_blank');
+        const msg = this.$('#shareMsg');
+        navigator.clipboard?.writeText(url).then(
+          () => {
+            if (msg) msg.textContent = '¡Enlace copiado! Compártelo con quien quieras.';
+          },
+          () => {
+            if (msg) msg.textContent = 'Abriendo tu tarjeta en una pestaña nueva.';
+          },
+        );
+      });
     }
   }
 
@@ -311,6 +421,161 @@ export class Overlay {
     this.$('#back').addEventListener('click', () => this.showMenu());
   }
 
+  // ---------- ROOMS ----------
+  async showRooms(note?: string) {
+    this.show();
+    const handle = getHandle();
+    this.card.innerHTML = `
+      <h2>📺 Salas</h2>
+      ${note ? `<p class="ok">${escapeHtml(note)}</p>` : ''}
+      <p class="muted">Crea una sala y comparte el código, o únete a una existente.</p>
+      <label>Tu nombre</label>
+      <input id="handle" value="${escapeAttr(handle)}" maxlength="16" placeholder="tu nombre" />
+      <div class="space"></div>
+      <label>Crear una sala nueva</label>
+      <input id="roomName" placeholder="nombre de la sala" maxlength="24" />
+      <label>Número de circuitos</label>
+      <select id="numCourses">
+        <option value="3">3 circuitos</option>
+        <option value="5" selected>5 circuitos</option>
+        <option value="7">7 circuitos</option>
+      </select>
+      <button class="btn" id="create">Crear sala</button>
+      <div class="space"></div>
+      <label>Unirse con código</label>
+      <input id="code" placeholder="p.ej. SALA42" maxlength="12" style="text-transform:uppercase" />
+      <button class="btn secondary" id="join">Unirse</button>
+      <button class="btn ghost" id="back">← Volver</button>
+      <div class="err" id="err"></div>
+    `;
+    const h = this.$('#handle') as HTMLInputElement;
+    this.$('#create').addEventListener('click', async () => {
+      const name = (this.$('#roomName') as HTMLInputElement).value.trim();
+      const nm = h.value.trim();
+      const numCourses = Number((this.$('#numCourses') as HTMLSelectElement).value);
+      if (!nm) return this.err('Pon tu nombre.');
+      if (!name) return this.err('Pon un nombre de sala.');
+      setHandle(nm);
+      try {
+        const res = await api.createRoom(name, nm, numCourses);
+        setUserId(res.userId);
+        localStorage.setItem('trampa.roomId', res.id);
+        this.showRoom(res.id);
+      } catch (e: any) {
+        this.err(e.message);
+      }
+    });
+    this.$('#join').addEventListener('click', async () => {
+      const code = (this.$('#code') as HTMLInputElement).value.trim().toUpperCase();
+      const nm = h.value.trim();
+      if (!nm) return this.err('Pon tu nombre.');
+      if (!code) return this.err('Pon el código.');
+      setHandle(nm);
+      try {
+        const res = await api.joinRoom(code, nm);
+        setUserId(res.userId);
+        localStorage.setItem('trampa.roomId', res.id);
+        this.showRoom(res.id);
+      } catch (e: any) {
+        this.err(e.message);
+      }
+    });
+    this.$('#back').addEventListener('click', () => this.showMenu());
+  }
+
+  async showRoom(roomId: string) {
+    this.show();
+    this.loading('Cargando sala…');
+    let room: RoomState;
+    try {
+      room = await api.getRoom(roomId);
+    } catch (e: any) {
+      this.showRooms().then(() => this.err(`No se pudo cargar la sala: ${e.message}`));
+      return;
+    }
+
+    const isHost = room.hostId === getUserId();
+    const finished = room.status === 'finished';
+
+    const circuits = Array.from({ length: room.numCourses }, (_, i) =>
+      `<button class="btn" data-course="${i}">Circuito ${i + 1}</button>`,
+    ).join('');
+
+    this.card.innerHTML = `
+      <h2>${escapeHtml(room.name)}</h2>
+      <p class="muted center">comparte el código:</p>
+      <div class="code-big">${escapeHtml(room.code)}</div>
+      <div class="center muted">${room.members.length} jugador${room.members.length === 1 ? '' : 'es'} · ${room.numCourses} circuitos</div>
+      <div class="space"></div>
+      ${(finished && room.podium.length) ? renderPodium(room.podium) : ''}
+      ${renderStandings(room.standings, getHandle())}
+      ${finished ? '' : `<h2>Circuitos</h2><div class="circuits">${circuits}</div>`}
+      ${isHost && !finished ? '<button class="btn secondary" id="finish">🏁 Finalizar torneo</button>' : ''}
+      <button class="btn ghost" id="back">← Volver</button>
+      <div class="err" id="err"></div>
+    `;
+
+    if (!finished) {
+      this.card.querySelectorAll('[data-course]').forEach((n) =>
+        n.addEventListener('click', () => {
+          const idx = Number(n.getAttribute('data-course'));
+          this.playRoomCourse(roomId, idx, room.numCourses);
+        }),
+      );
+    }
+
+    if (isHost && !finished) {
+      this.$('#finish').addEventListener('click', async () => {
+        try {
+          const res = await api.finishRoom(roomId, getHandle());
+          if (res.podium && res.podium.length) {
+            this.card.innerHTML = `
+              <h2>${escapeHtml(room.name)} — 🏆 Podio</h2>
+              ${renderPodium(res.podium)}
+              ${renderStandings(res.standings, getHandle())}
+              <button class="btn ghost" id="back">← Volver al menú</button>
+            `;
+            this.$('#back').addEventListener('click', () => this.showMenu());
+          } else {
+            this.showRoom(roomId);
+          }
+        } catch (e: any) {
+          this.err(e.message);
+        }
+      });
+    }
+
+    this.$('#back').addEventListener('click', () => this.showMenu());
+  }
+
+  private async playRoomCourse(roomId: string, idx: number, numCourses: number) {
+    const handle = getHandle();
+    if (!handle) return this.err('Escribe tu nombre primero.');
+    this.loading(`Cargando circuito ${idx + 1}…`);
+    try {
+      const rc = await api.roomCourse(roomId, idx);
+      const ghostsRaw = await api.ghosts(rc.courseId, handle).catch(() => []);
+      const ghosts = await prepareGhosts(
+        rc.course,
+        ghostsRaw.map((g) => ({ handle: g.handle, timeMs: g.timeMs, inputLog: g.inputLog })),
+        rc.traps,
+      );
+      this.startRun({
+        course: rc.course,
+        courseId: rc.courseId,
+        placedTraps: rc.traps,
+        ghosts,
+        online: true,
+        mode: 'room',
+        roomId,
+        roomIdx: idx,
+        numCourses,
+      });
+    } catch (e: any) {
+      this.showRoom(roomId).then(() => this.err(`No se pudo cargar el circuito: ${e.message}`));
+    }
+  }
+
   // ---------- STORE ----------
   showStore() {
     this.show();
@@ -376,6 +641,40 @@ function renderLeaderboard(lb: LeaderboardEntry[], me: string): string {
     )
     .join('');
   return `<h2>Ranking de hoy</h2><table class="lb">${rows}</table>`;
+}
+
+function renderSaboteurs(sab: SaboteurEntry[]): string {
+  if (!sab.length) return '';
+  const rows = sab
+    .map(
+      (e, i) =>
+        `<tr><td class="rank">${i + 1}</td><td>${escapeHtml(e.handle)}</td><td class="time">${e.hits} pillado${e.hits === 1 ? '' : 's'}</td></tr>`,
+    )
+    .join('');
+  return `<h2>😈 Ranking Saboteador</h2><table class="lb">${rows}</table>`;
+}
+
+function renderStandings(st: RoomStanding[], me: string): string {
+  if (!st.length) return '<p class="muted">Aún no hay resultados. ¡Corre un circuito!</p>';
+  const rows = st
+    .map(
+      (e, i) =>
+        `<tr class="${e.handle === me ? 'me' : ''}"><td class="rank">${i + 1}</td><td>${escapeHtml(e.handle)}</td><td class="time">${e.points} pts · ${e.played} circ.</td></tr>`,
+    )
+    .join('');
+  return `<h2>Clasificación</h2><table class="lb">${rows}</table>`;
+}
+
+function renderPodium(podium: RoomStanding[]): string {
+  const medals = ['🥇', '🥈', '🥉'];
+  const rows = podium
+    .slice(0, 3)
+    .map(
+      (e, i) =>
+        `<div class="podium-row"><span class="medal">${medals[i] || ''}</span><span class="grow">${escapeHtml(e.handle)}</span><span class="pts">${e.points} pts</span></div>`,
+    )
+    .join('');
+  return `<h2>🏆 Podio</h2><div class="podium">${rows}</div>`;
 }
 
 function renderTrapMap(course: Course): string {

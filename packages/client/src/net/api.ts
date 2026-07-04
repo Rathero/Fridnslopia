@@ -38,6 +38,48 @@ export interface GhostEntry {
   inputLog: InputLog;
 }
 
+export interface SaboteurEntry {
+  handle: string;
+  hits: number;
+  trapType: string;
+}
+
+export interface RoomMember {
+  id: string;
+  handle: string;
+}
+
+export interface RoomStanding {
+  userId: string;
+  handle: string;
+  points: number;
+  played: number;
+  bestRank: number;
+}
+
+export interface RoomState {
+  id: string;
+  code: string;
+  name: string;
+  numCourses: number;
+  status: string;
+  hostId: string;
+  members: RoomMember[];
+  standings: RoomStanding[];
+  podium: RoomStanding[];
+}
+
+export interface RoomCourse {
+  courseId: string;
+  idx: number;
+  dailySeed: number;
+  config: any;
+  course: Course;
+  traps: PlacedTrap[];
+  verified: boolean;
+  numCourses: number;
+}
+
 export interface LeagueState {
   id: string;
   name: string;
@@ -101,5 +143,54 @@ export const api = {
       `/courses/${courseId}/ghosts${
         excludeHandle ? `?excludeHandle=${encodeURIComponent(excludeHandle)}` : ''
       }`,
+    ),
+
+  saboteurs: (courseId: string) =>
+    req<SaboteurEntry[]>(`/courses/${courseId}/saboteurs`),
+
+  shareCardUrl: (courseId: string, handle: string) =>
+    `${API_URL}/courses/${courseId}/card.svg?handle=${encodeURIComponent(handle)}`,
+
+  createRoom: (name: string, handle: string, numCourses: number) =>
+    req<{
+      id: string;
+      code: string;
+      name: string;
+      numCourses: number;
+      status: string;
+      hostId: string;
+      userId: string;
+    }>('/rooms', {
+      method: 'POST',
+      body: JSON.stringify({ name, handle, numCourses }),
+    }),
+
+  joinRoom: (code: string, handle: string) =>
+    req<{
+      id: string;
+      code: string;
+      name: string;
+      numCourses: number;
+      status: string;
+      hostId: string;
+      userId: string;
+      members: RoomMember[];
+    }>('/rooms/join', {
+      method: 'POST',
+      body: JSON.stringify({ code, handle }),
+    }),
+
+  getRoom: (id: string) => req<RoomState>(`/rooms/${id}`),
+
+  roomCourse: (roomId: string, idx: number) =>
+    req<RoomCourse>(`/rooms/${roomId}/courses/${idx}`),
+
+  finishRoom: (roomId: string, handle: string) =>
+    req<{ ok: boolean; status: string; standings: RoomStanding[]; podium: RoomStanding[] }>(
+      `/rooms/${roomId}/finish`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ handle }),
+      },
     ),
 };

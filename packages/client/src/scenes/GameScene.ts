@@ -21,6 +21,12 @@ export interface GameSceneData {
   ghosts: PreparedGhost[];
   online: boolean;
   playDate?: string;
+  /** Run context: which mode/flow produced this run (see result screen). */
+  mode?: 'league' | 'global' | 'room';
+  roomId?: string;
+  roomIdx?: number;
+  numCourses?: number;
+  shareable?: boolean;
   /** Dev/demo mode: let the shared autopilot play the run (see ?autoplay). */
   autoplay?: boolean;
 }
@@ -264,6 +270,11 @@ export class GameScene extends Phaser.Scene {
       placedTraps: this.runData.placedTraps,
       online: this.runData.online,
       playDate: this.runData.playDate,
+      mode: this.runData.mode,
+      roomId: this.runData.roomId,
+      roomIdx: this.runData.roomIdx,
+      numCourses: this.runData.numCourses,
+      shareable: this.runData.shareable,
     };
     this.world.free();
     this.scene.stop();
@@ -281,4 +292,9 @@ export interface RunResult {
   placedTraps: PlacedTrap[];
   online: boolean;
   playDate?: string;
+  mode?: 'league' | 'global' | 'room';
+  roomId?: string;
+  roomIdx?: number;
+  numCourses?: number;
+  shareable?: boolean;
 }

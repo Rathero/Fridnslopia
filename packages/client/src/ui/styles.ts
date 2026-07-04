@@ -54,6 +54,16 @@ export function injectStyles() {
   .trapmap { width: 100%; background: #0a1120; border-radius: 10px; margin: 10px 0; display: block; }
   .center { text-align: center; }
   .space { height: 8px; }
+  .code-big { font-size: 34px; font-weight: 800; letter-spacing: 4px; color: #38e1ff;
+    text-align: center; margin: 6px 0; font-variant-numeric: tabular-nums; }
+  .podium { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+  .podium-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    border: 1px solid #24304e; border-radius: 12px; background: #101a30; }
+  .podium-row .medal { font-size: 24px; flex: none; }
+  .podium-row .grow { flex: 1; font-weight: 700; }
+  .podium-row .pts { color: #ffd23c; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .circuits { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  .circuits .btn { width: auto; margin: 0; padding: 10px 14px; flex: 1 1 40%; }
   `;
   const style = document.createElement('style');
   style.id = 'trampa-styles';
