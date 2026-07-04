@@ -23,6 +23,13 @@ coursesRouter.get(
     const leagueId = normaliseLeagueId(req.query.leagueId);
     const playDate = todayString();
 
+    // A stale/unknown league would FK-violate on course insert (500). Fail clean
+    // so the client can drop the dead league id and prompt to create/join one.
+    if (leagueId) {
+      const { rows } = await query<{ id: string }>('select id from leagues where id = $1', [leagueId]);
+      if (!rows[0]) throw notFound('league not found');
+    }
+
     const row = await getOrCreateTodayCourse(leagueId, playDate);
     const course = buildCourseFromRow(row);
     const traps = await getPlacedTraps(row.id);

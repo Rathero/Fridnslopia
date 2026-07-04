@@ -66,7 +66,7 @@ export class Overlay {
   async showMenu() {
     this.show();
     const handle = getHandle();
-    const leagueId = getLeagueId();
+    let leagueId = getLeagueId();
     let leagueLine = '<p class="muted">Sin liga. Crea o únete a una.</p>';
     if (leagueId) {
       try {
@@ -74,8 +74,11 @@ export class Overlay {
         leagueLine = `<div class="center"><div class="chip">🏆 ${l.name}</div>
           <div class="streak">🔥 ${l.streakCount}</div>
           <div class="muted">racha de liga · ${l.members.length} miembros</div></div>`;
-      } catch {
-        leagueLine = '<p class="muted">No se pudo cargar la liga (¿servidor apagado?).</p>';
+      } catch (e: any) {
+        // A league that no longer exists (server was reset): drop it silently so
+        // the user can just create/join a new one instead of getting stuck.
+        if (isGone(e)) { setLeagueId(''); leagueId = null; }
+        else leagueLine = '<p class="muted">No se pudo cargar la liga (¿servidor apagado?).</p>';
       }
     }
 
@@ -158,6 +161,10 @@ export class Overlay {
         playDate: today.playDate,
       });
     } catch (e: any) {
+      if (isGone(e)) {
+        setLeagueId('');
+        return this.showLeague('Esa liga ya no existe (se reinició el servidor). Crea o únete a una nueva.');
+      }
       this.showMenu().then(() =>
         this.err(`No se pudo conectar: ${e.message}. Prueba partida rápida.`),
       );
@@ -760,6 +767,12 @@ function renderTrapMap(course: Course3D): string {
 function parseFloatSafe(s: string): number {
   const n = parseFloat(s);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** True if an API error means the referenced thing no longer exists. */
+function isGone(e: any): boolean {
+  const m = String(e?.message || '').toLowerCase();
+  return m.includes('not found') || m.includes('no encontrad');
 }
 
 function accessoryLabel(a: string): string {
