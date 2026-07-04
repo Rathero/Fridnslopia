@@ -13,15 +13,27 @@
       }
       #time { font-size: 40px; font-weight: 800; letter-spacing: 1px; }
       #sub { font-size: 14px; color: #8fd; margin-top: 2px; }
+      #delta { font-size: 22px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; min-height: 26px; }
       #hint { position: fixed; top: 16px; right: 18px; color: #9fb; font-size: 12px; z-index: 5; opacity:.8; }
+      #pos { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 5;
+        color: #eaf2ff; font-size: 18px; font-weight: 800; text-shadow: 0 2px 8px rgba(0,0,0,.6); pointer-events: none; }
+      #progressWrap { position: fixed; left: 6%; right: 6%; bottom: 14px; height: 7px; z-index: 5;
+        background: rgba(255,255,255,.12); border-radius: 6px; overflow: hidden; pointer-events: none; opacity: 0; transition: opacity .3s; }
+      #progressBar { height: 100%; width: 0%; background: linear-gradient(90deg,#38e1ff,#8affd6); border-radius: 6px; }
+      #countdown { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        z-index: 6; pointer-events: none; font-size: 120px; font-weight: 900; color: #fff;
+        text-shadow: 0 6px 40px rgba(56,225,255,.8); opacity: 0; }
       .zone { position: fixed; bottom: 0; height: 40vh; width: 33vw; z-index: 4; }
       #zl { left: 0; } #zr { right: 0; } #zj { left: 33vw; width: 34vw; }
     </style>
   </head>
   <body>
     <div id="app"></div>
-    <div id="hud"><div id="time">0.00</div><div id="sub">TRAMPA 3D · cenital</div></div>
+    <div id="hud"><div id="time">0.00</div><div id="sub">TRAMPA 3D · cenital</div><div id="delta"></div></div>
+    <div id="pos"></div>
     <div id="hint">← → esquiva · ESPACIO salta</div>
+    <div id="progressWrap"><div id="progressBar"></div></div>
+    <div id="countdown"></div>
     <div class="zone" id="zl"></div>
     <div class="zone" id="zj"></div>
     <div class="zone" id="zr"></div>

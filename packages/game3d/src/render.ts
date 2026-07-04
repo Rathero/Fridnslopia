@@ -1,6 +1,12 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { Course3D, PlacedTrap3D } from '@trampa/shared';
 import { obstacleAABB } from '@trampa/shared';
+
+const FIXED_DT = 1 / 60;
 
 /**
  * Three.js renderer for the aerial (cenital) view. Angled top-down camera that
@@ -35,6 +41,11 @@ export class Renderer3D {
   private fxFlash: HTMLDivElement;
   private fxSpeed: HTMLDivElement;
   private streaks: THREE.Mesh[] = [];
+  private composer: EffectComposer;
+  private bloom: UnrealBloomPass;
+  private particles: THREE.Mesh[] = [];
+  private pdata: { vx: number; vy: number; vz: number; life: number; max: number }[] = [];
+  private pIdx = 0;
 
   constructor(container: HTMLElement, course: Course3D, placedTraps: PlacedTrap3D[] = []) {
     this.course = course;
@@ -157,14 +168,63 @@ export class Renderer3D {
       this.scene.add(m);
     }
 
+    // Particle pool (jump poof, landing dust, death burst). Additive sparks.
+    const pgeo = new THREE.SphereGeometry(0.12, 6, 6);
+    for (let i = 0; i < 90; i++) {
+      const m = new THREE.Mesh(
+        pgeo,
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }),
+      );
+      m.visible = false;
+      this.particles.push(m);
+      this.pdata.push({ vx: 0, vy: 0, vz: 0, life: 0, max: 1 });
+      this.scene.add(m);
+    }
+
     // DOM FX overlays (below the UI card at z-index 10). Cheap and reliable.
     this.fxSpeed = this.makeOverlay(
       `radial-gradient(ellipse at center, rgba(0,0,0,0) 42%, ${cssColor(pal.accent)} 130%)`,
     );
     this.fxFlash = this.makeOverlay('radial-gradient(ellipse at center, rgba(255,40,60,0.55) 0%, rgba(255,0,30,0.85) 120%)');
 
+    // Post-processing: bloom makes the emissive neon actually glow.
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.75, // strength
+      0.6, // radius
+      0.72, // threshold — only bright/emissive pixels bloom
+    );
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
+
     addEventListener('resize', () => this.onResize());
   }
+
+  /** Emit a burst of `n` sparks from a point with a spread and colour. */
+  burst(x: number, y: number, z: number, n: number, color: number, spread: number, up = 1) {
+    for (let k = 0; k < n; k++) {
+      const m = this.particles[this.pIdx % this.particles.length];
+      const d = this.pdata[this.pIdx % this.particles.length];
+      this.pIdx++;
+      m.visible = true;
+      m.position.set(x, y, z);
+      (m.material as THREE.MeshBasicMaterial).color.setHex(color);
+      // Deterministic-free jitter (renderer only): trig hash on index + clock.
+      const a = (k * 2.399963 + this.clock * 0.13) % (Math.PI * 2);
+      const r = spread * (0.4 + 0.6 * Math.abs(Math.sin(k * 12.9898)));
+      d.vx = Math.cos(a) * r;
+      d.vz = Math.sin(a) * r;
+      d.vy = up * (1.5 + 2.5 * Math.abs(Math.cos(k * 4.1)));
+      d.max = d.life = 26 + (k % 10);
+      const s = 0.5 + Math.abs(Math.sin(k)) * 0.7;
+      m.scale.setScalar(s);
+    }
+  }
+
+  burstJump(x: number, y: number, z: number) { this.burst(x, y - 0.3, z, 8, 0xbfe9ff, 3.2, 0.4); }
+  burstLand(x: number, y: number, z: number) { this.burst(x, y - 0.4, z, 10, 0xffffff, 4.0, 0.5); }
 
   private makeOverlay(background: string): HTMLDivElement {
     const el = document.createElement('div');
@@ -175,10 +235,30 @@ export class Renderer3D {
     return el;
   }
 
-  /** Trigger a hit reaction (death): screen shake + red flash. */
+  /** Trigger a hit reaction (death): screen shake + red flash + spark burst. */
   hit() {
     this.shake = Math.max(this.shake, 0.7);
     this.fxFlash.style.opacity = '1';
+    const p = this.player.position;
+    this.burst(p.x, p.y, p.z, 22, 0xff5a4a, 6.5, 1.1);
+    this.burst(p.x, p.y, p.z, 10, 0xffd23c, 5.0, 1.3);
+  }
+
+  /** Advance the spark particles (called each rendered frame). */
+  private updateParticles() {
+    for (let i = 0; i < this.particles.length; i++) {
+      const d = this.pdata[i];
+      if (d.life <= 0) continue;
+      const m = this.particles[i];
+      d.life--;
+      d.vy -= 0.5; // gravity
+      m.position.x += d.vx * FIXED_DT;
+      m.position.y += d.vy * FIXED_DT;
+      m.position.z += d.vz * FIXED_DT;
+      const t = d.life / d.max;
+      (m.material as THREE.MeshBasicMaterial).opacity = Math.max(0, t);
+      if (d.life <= 0) m.visible = false;
+    }
   }
 
   // --- construction helpers -------------------------------------------------
@@ -340,6 +420,16 @@ export class Renderer3D {
       const b = obstacleAABB(m.o, frame);
       m.mesh.position.x = m.baseX + b.dx;
       m.edge.position.x = m.baseX + b.dx;
+      // Telegraph: a mover sweeps fastest at the centre of its arc. Flash the
+      // rim brighter + toward warning-red so you can read the danger early.
+      if (m.o.amp && m.o.period) {
+        const vel = Math.abs(Math.cos((2 * Math.PI * (frame + (m.o.phase ?? 0))) / m.o.period));
+        const em = m.mesh.material as THREE.MeshStandardMaterial;
+        em.emissiveIntensity = 0.55 + vel * 1.2;
+        const edgeMat = m.edge.material as THREE.LineBasicMaterial;
+        edgeMat.opacity = 0.4 + vel * 0.55;
+        edgeMat.color.setRGB(1, 1 - vel * 0.75, 1 - vel * 0.75);
+      }
     }
     // Gentle pulse on the finish so it feels alive.
     this.clock += 1;
@@ -366,7 +456,10 @@ export class Renderer3D {
     if (landed) {
       const impact = Math.abs(this.lastY - y);
       this.squash = Math.min(0.45, this.squash + impact * 1.4);
-      if (impact > 0.35) this.shake = Math.max(this.shake, Math.min(0.28, impact * 0.35));
+      if (impact > 0.3) {
+        this.shake = Math.max(this.shake, Math.min(0.28, impact * 0.35));
+        this.burstLand(x, y, z);
+      }
     }
     this.squash *= 0.82;
     const airStretch = !grounded ? Math.min(0.12, Math.abs(vy) * 0.012) : 0;
@@ -462,18 +555,22 @@ export class Renderer3D {
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement);
     }
+    this.composer.dispose();
     this.fxSpeed.remove();
     this.fxFlash.remove();
   }
 
   render() {
-    this.renderer.render(this.scene, this.camera);
+    this.updateParticles();
+    this.composer.render();
   }
 
   private onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.composer.setSize(window.innerWidth, window.innerHeight);
+    this.bloom.setSize(window.innerWidth, window.innerHeight);
   }
 }
 
