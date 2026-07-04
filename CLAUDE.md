@@ -18,16 +18,22 @@ guide.
 
 | Area | State |
 |---|---|
-| Deterministic core (`@trampa/shared`) | ✅ done, unit-tested |
-| 2D game client (`@trampa/client`, Phaser + Rapier2D) | ✅ playable, all flows |
-| Backend (`@trampa/server`, Node/Express + Postgres) | ✅ done, smoke-tested |
-| Leagues, daily course, runs+anti-cheat, traps, streak, notifications | ✅ |
+| Deterministic core (`@trampa/shared`) — 2D **and** 3D (`sim3d`) | ✅ done, unit-tested |
+| **3D aerial game client** (`@trampa/game3d`, Three.js + Rapier3D) — the primary/only client | ✅ playable, all online flows, deployed |
+| Backend (`@trampa/server`, Node/Express + Postgres) — runs on the **3D** engine | ✅ done, smoke + e2e tested |
+| Leagues, daily course, runs+anti-cheat, traps, streak, notifications | ✅ (3D) |
 | Global daily challenge + shareable SVG card | ✅ |
 | Streamer rooms + tournament (N circuits, points, podium) | ✅ |
 | Saboteur ranking + trap cap for big lobbies | ✅ |
-| 3D aerial prototype (`@trampa/game3d`, Three.js + Rapier3D) | ⚠️ prototype (not wired to backend) |
+| 2D game client (`@trampa/client`, Phaser + Rapier2D) | ⚠️ legacy — code kept, not deployed |
 | Realtime live multiplayer | ❌ future (v2) |
 | Auth / accounts | ❌ handles are trust-based (MVP) |
+
+> **Engine decision (done):** the game shipped **3D-only**. The server, anti-cheat,
+> daily generation, rooms and traps all run on the deterministic 3D engine
+> (`packages/shared/src/sim3d/`). The 2D packages (`client`, and the 2D half of
+> `shared`) remain in the tree as legacy/reference but are not part of the live
+> product. Live URLs + redeploy steps are in `DEPLOY.md`.
 
 ---
 

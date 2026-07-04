@@ -101,7 +101,9 @@ export async function processOvertakes(
   previousBestMs: number | null,
 ): Promise<void> {
   try {
-    const upperBound = previousBestMs ?? Number.MAX_SAFE_INTEGER;
+    // When the runner had no previous best, everyone slower than the new time
+    // was overtaken — no upper bound. Otherwise bound by the old best. Avoid a
+    // JS sentinel here: time_ms is an int4 column and MAX_SAFE_INTEGER overflows it.
     const { rows } = await query<{ user_id: string }>(
       `select r.user_id, min(r.time_ms) as best
          from runs r
@@ -109,8 +111,9 @@ export async function processOvertakes(
           and r.finished = true
           and r.user_id <> $2
         group by r.user_id
-        having min(r.time_ms) > $3 and min(r.time_ms) <= $4`,
-      [courseId, runnerUserId, newTimeMs, upperBound],
+        having min(r.time_ms) > $3
+           and ($4::int is null or min(r.time_ms) <= $4::int)`,
+      [courseId, runnerUserId, newTimeMs, previousBestMs],
     );
     for (const row of rows) {
       await notify(row.user_id, 'overtaken', {
