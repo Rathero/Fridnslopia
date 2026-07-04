@@ -1,49 +1,49 @@
 # TRAMPA
 
-Competitive, **async-first** mobile obstacle-race game for 2–6 friends in private
-leagues. One thumb, comedic physics, daily AI-orchestrated circuits, asynchronous
-sabotage, and a shared league streak. This repo implements the full MVP spec
-(milestones **M0–M6**).
+Competitive, **async-first** mobile obstacle-race game for friends in private
+leagues. One thumb, comedic physics, daily circuits, asynchronous sabotage, and a
+shared league streak — plus streamer rooms with tournaments and a global daily
+challenge you can share.
 
-> Working name **TRAMPA** ("trap"). The differentiator: you don't need everyone
-> online at once — you race the **ghosts** of your friends against the clock on a
-> shared daily circuit, and each player plants **one trap** for the others.
+> You don't need everyone online at once: you race the **ghosts** of your friends
+> against the clock on a shared daily circuit, and each player plants **one trap**
+> for the others.
+
+**New here / continuing the project? Read [`CLAUDE.md`](./CLAUDE.md)** — it's the
+full handoff guide (architecture, run/verify, how to extend, known issues, and a
+prioritised roadmap).
 
 ---
 
-## Why it's built this way (the golden rule: determinism)
+## Why it's built this way — determinism
 
 Ghosts and fair leagues only work if the simulation is **bit-for-bit
-deterministic** given the same seed + input. So everything that affects the sim:
+deterministic** given the same seed + input:
 
-- Uses a **seeded PRNG** (`mulberry32`) derived from a `dailySeed` — never
-  `Math.random()`.
-- Runs at a **fixed 60 Hz** timestep with an accumulator; the renderer
-  interpolates, the sim never depends on framerate.
-- Runs on **Rapier2D (WASM)** — cross-platform deterministic — not Phaser's
-  Arcade/Matter physics.
-- Represents a run as a tiny **input-log stream** (`{seed, events:[{f,t}]}`), not
-  positions. The server **re-simulates** that log to verify times (anti-cheat).
+- Seeded PRNG (`mulberry32`) from a `dailySeed` — never `Math.random()`.
+- Fixed **60 Hz** timestep with an accumulator; the renderer interpolates.
+- **Rapier2D (WASM)** physics — cross-platform deterministic (not Phaser Arcade/Matter).
+- A run is a tiny **input-log stream** `{seed, events}`, not positions — the
+  server **re-simulates** it to verify times (anti-cheat).
 
-The *exact same* `SimWorld` class drives live play (client), ghost replay, and the
-server's anti-cheat re-sim — so a recorded run reproduces identically everywhere.
-
----
+The same `SimWorld` drives live play, ghost replay, and the server's anti-cheat.
 
 ## Monorepo layout
 
 ```
 packages/
-  shared/   @trampa/shared — the deterministic core (no UI, no server):
-              PRNG, physics constants, chunk library, assembler, completability
-              verifier, Rapier SimWorld + headless simulate, autopilot bot,
-              Zod-validated LLM config + fallback.
-  client/   @trampa/client — Phaser 3 + Rapier game. Fixed-step loop, one-thumb
-              controls, level/ghost/trap rendering, HTML overlay for menus /
-              leagues / store / results / trap placement, Capacitor config.
-  server/   @trampa/server — Node/Express + PostgreSQL. Leagues, daily course
-              generate+verify on-demand, run submission with server-side re-sim,
-              traps, shared streak, notifications, LLM daily config.
+  shared/   @trampa/shared — deterministic core: PRNG, physics, chunk library,
+              assembler, verifier, Rapier SimWorld + headless simulate, autopilot,
+              Zod-validated LLM daily config + fallback.
+  client/   @trampa/client — Phaser 3 + Rapier2D game (the product). One-thumb
+              controls, ghosts, traps, leagues, rooms, global daily, store; HTML
+              overlay UI; Capacitor config for mobile.
+  server/   @trampa/server — Node/Express + PostgreSQL. Leagues, daily/global
+              course generate+verify, run submission with server-side re-sim,
+              traps, shared streak, notifications, streamer rooms + tournaments,
+              saboteur ranking, shareable SVG cards.
+  game3d/   @trampa/game3d — Three.js + Rapier3D aerial "cenital" prototype
+              (standalone; explored visual direction).
 ```
 
 ## Quick start
@@ -52,75 +52,40 @@ packages/
 npm install
 npm run build:shared          # client & server import the built shared package
 npm test                       # determinism + completability + autopilot tests
+npm run dev:client             # offline "Partida rápida" — no backend needed
 ```
 
-### Play offline (no backend) — M0/M1/M2
+Full stack (Postgres), 3D prototype, smoke tests, env vars, and ports are all
+documented in **[`CLAUDE.md`](./CLAUDE.md)** and each package's README.
 
-```bash
-npm run dev:client             # http://localhost:5173  -> "Partida rápida"
-```
+## Features
 
-Quick Play generates a verified course locally and lets you race your own saved
-ghost. Tap = jump, hold = charge a bigger jump.
-
-### Full stack — M3/M4/M5
-
-```bash
-# 1. Postgres (docker compose file lives in packages/server)
-cd packages/server && docker compose up -d && cd ../..
-
-# 2. migrate + seed a demo league (invite code TRAMPA1)
-DATABASE_URL=postgres://trampa:trampa@localhost:5432/trampa \
-  npm run migrate --workspace @trampa/server
-DATABASE_URL=postgres://trampa:trampa@localhost:5432/trampa \
-  npm run seed --workspace @trampa/server
-
-# 3. run the API
-DATABASE_URL=postgres://trampa:trampa@localhost:5432/trampa \
-  npm run dev:server            # http://localhost:8787
-
-# 4. point the client at it and play the daily circuit
-VITE_API_URL=http://localhost:8787 npm run dev:client
-
-# 5. (optional) end-to-end smoke of the whole API pipeline
-DATABASE_URL=postgres://trampa:trampa@localhost:5432/trampa \
-  npm run smoke --workspace @trampa/server
-```
-
-The LLM daily config is optional: set `ANTHROPIC_API_KEY` to have the model pick
-the theme / palette / tag-weights / modifier; without it (or on any error) a
-validated `defaultConfig` is used — a model hiccup can never break the day.
-
-### Mobile packaging — M6
-
-`packages/client/capacitor.config.ts` documents the Capacitor steps to ship the
-single TypeScript codebase to iOS / Android.
-
----
-
-## Milestone status
-
-| Milestone | What | Status |
-|---|---|---|
-| **M0** | Playable single-player skeleton, fixed-step loop, controls, respawn, timer | ✅ |
-| **M1** | Chunk library, deterministic seeded assembler, completability verifier | ✅ |
-| **M2** | Input-log recording + ghost re-simulation, race your own ghost | ✅ |
-| **M3** | Node+Postgres backend, leagues, daily course, submit + server re-sim, leaderboard | ✅ |
-| **M4** | Async traps: place 1/circuit (verified), render everyone's, hit counter | ✅ |
-| **M5** | Shared league streak, notifications, LLM daily config (Zod + fallback) | ✅ |
-| **M6** | Capacitor mobile config, cosmetics store (direct-purchase, no loot boxes) | ✅ |
+| Area | Status |
+|---|---|
+| Playable one-thumb runner, fixed-step loop, respawn, timer | ✅ |
+| Deterministic seeded course generation + completability verifier | ✅ |
+| Input-log recording + ghost re-simulation (race your friends' ghosts) | ✅ |
+| Backend: leagues, daily course, submit + **server-side anti-cheat re-sim**, leaderboard | ✅ |
+| Async traps: place 1/circuit (verified), render everyone's, hit counter | ✅ |
+| Shared league streak, notifications, LLM daily config (Zod + fallback) | ✅ |
+| **Global daily challenge** + shareable SVG result card ("¿me superas?") | ✅ |
+| **Streamer rooms** (no player cap) + **tournament** of N circuits + **podium** | ✅ |
+| **Saboteur ranking** (who catches the most players) + trap cap for big lobbies | ✅ |
+| Cosmetics store (direct purchase, no loot boxes) | ✅ |
+| Capacitor mobile config | ✅ |
+| 3D aerial prototype (Three.js + Rapier3D) | ⚠️ prototype |
+| Realtime live multiplayer, auth/accounts | ❌ future |
 
 ## Testing
 
 - `npm test` — determinism (same seed → same course; same log → same sim),
-  completability across seeds, and the autopilot generating finishing runs whose
-  logs re-simulate to the identical time.
-- `npm run smoke --workspace @trampa/server` — live API: create league →
-  autopilot run → **accepted**, tampered time → **rejected**, trap placement,
-  leaderboard, ghosts, and the shared streak ticking when all members finish.
+  completability across seeds, autopilot finishing runs that re-sim to the exact
+  time.
+- `npm run smoke --workspace @trampa/server` — live API: run accepted, tampered
+  time rejected, traps, leaderboard, ghosts, streak. There's also a rooms/global
+  path exercised in development (see CLAUDE.md).
 
 ## Monetization (no gambling regulation)
 
 Direct-purchase cosmetics only (no loot boxes), premium leagues, and a
 **forfeit-tracker** that only announces the loser — the app never touches money.
-See spec §8.
