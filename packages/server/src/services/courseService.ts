@@ -62,8 +62,16 @@ export function buildCourseFromRow(row: DailyCourseRow): Course {
   return assembleCourse(Number(row.daily_seed), row.config);
 }
 
-/** All traps placed on a course, mapped to shared PlacedTrap (with owner handle). */
-export async function getPlacedTraps(courseId: string): Promise<PlacedTrap[]> {
+/**
+ * All traps placed on a course, mapped to shared PlacedTrap (with owner handle).
+ * `cap` bounds how many are materialised — for a huge streamer lobby we keep the
+ * most *effective* traps (most hits) so the circuit stays fun rather than being
+ * carpeted in hazards.
+ */
+export async function getPlacedTraps(
+  courseId: string,
+  cap?: number,
+): Promise<PlacedTrap[]> {
   const { rows } = await query<{
     slot_x: number;
     slot_y: number;
@@ -75,7 +83,8 @@ export async function getPlacedTraps(courseId: string): Promise<PlacedTrap[]> {
        from traps t
        join users u on u.id = t.user_id
       where t.course_id = $1
-      order by t.created_at asc`,
+      order by ${cap ? 't.hits desc, t.created_at asc' : 't.created_at asc'}
+      ${cap ? 'limit ' + Math.max(1, Math.floor(cap)) : ''}`,
     [courseId],
   );
   return rows.map((r) => ({

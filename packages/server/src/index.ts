@@ -9,6 +9,7 @@ import { coursesRouter } from './routes/courses.js';
 import { runsRouter } from './routes/runs.js';
 import { trapsRouter } from './routes/traps.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { roomsRouter } from './routes/rooms.js';
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use('/courses', coursesRouter);
 app.use('/runs', runsRouter);
 app.use('/traps', trapsRouter);
 app.use('/notifications', notificationsRouter);
+app.use('/rooms', roomsRouter);
 
 // 404 fallback.
 app.use((_req, res) => {
