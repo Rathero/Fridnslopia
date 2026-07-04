@@ -79,6 +79,12 @@ export class Overlay {
       }
     }
 
+    const savedRoomId = localStorage.getItem('trampa.roomId');
+    const roomBackBtn = savedRoomId
+      ? `<button class="btn secondary" id="roomBack">↩ Volver a mi sala</button>
+         <div class="desc">Sigue el torneo que ya tienes abierto.</div>`
+      : '';
+
     this.card.innerHTML = `
       <div class="title">TRAMPA</div>
       <div class="subtitle">corre · esquiva · sabotea</div>
@@ -86,14 +92,20 @@ export class Overlay {
       <div class="space"></div>
       <label>Tu nombre</label>
       <input id="handle" placeholder="p.ej. rubén" value="${escapeAttr(handle)}" maxlength="16" />
-      <button class="btn" id="daily">▶ Jugar circuito de hoy</button>
+      <button class="btn" id="daily">▶ Circuito de hoy</button>
+      <div class="desc">El reto diario de tu liga. Corre, deja tu tiempo y una trampa.</div>
       <button class="btn secondary" id="global">🌍 Reto diario global</button>
-      <button class="btn secondary" id="rooms">📺 Salas</button>
-      <button class="btn secondary" id="quick">Partida rápida (offline)</button>
+      <div class="desc">El mismo circuito para todo el mundo hoy. Comparte tu marca.</div>
+      <button class="btn secondary" id="rooms">📺 Salas (torneo)</button>
+      <div class="desc">Torneo de varios circuitos con podio. Para un directo o quedada.</div>
+      ${roomBackBtn}
+      <button class="btn secondary" id="quick">🎮 Partida rápida (sin conexión)</button>
+      <div class="desc">Practica y corre contra tu propio fantasma.</div>
       <div class="row">
-        <button class="btn ghost" id="league">Liga</button>
-        <button class="btn ghost" id="store">Tienda</button>
+        <button class="btn ghost" id="league">🏆 Liga</button>
+        <button class="btn ghost" id="store">🛍 Tienda</button>
       </div>
+      <div class="desc center">Liga = tu grupo fijo con reto diario y racha. Sala = torneo puntual con podio.</div>
       <div class="err" id="err"></div>
     `;
     const handleInput = this.$('#handle') as HTMLInputElement;
@@ -115,6 +127,9 @@ export class Overlay {
       setHandle(handleInput.value.trim());
       this.playQuick();
     });
+    if (savedRoomId) {
+      this.$('#roomBack').addEventListener('click', () => this.showRoom(savedRoomId));
+    }
     this.$('#league').addEventListener('click', () => this.showLeague());
     this.$('#store').addEventListener('click', () => this.showStore());
   }
@@ -315,15 +330,22 @@ export class Overlay {
     if (!course.trapSlots.length) return '';
     return `
       <div class="space"></div>
-      <h2>Coloca tu trampa 😈</h2>
-      <label>Tipo</label>
-      <select id="trapType">
-        <option value="spike">Pincho (mata)</option>
-        <option value="bounce">Muelle (rebota)</option>
-        <option value="glue">Pegamento (frena)</option>
-      </select>
-      ${renderTrapMap(course)}
-      <div class="ok" id="trapMsg"></div>
+      <div class="trapbox">
+        <h2>😈 Deja una trampa</h2>
+        <p class="muted">Sabotea a quien corra este circuito <b>después que tú</b>: si tu colega la pisa,
+        pierde tiempo (o muere) y tú subes en el <b>Ranking Saboteador</b>. Tú no la sufres.</p>
+        <p class="muted"><b>1)</b> elige el tipo &nbsp; <b>2)</b> toca un punto
+        <span style="color:#22ffcc">●</span> del mapa (son los sitios permitidos).</p>
+        <label>Tipo de trampa</label>
+        <select id="trapType">
+          <option value="spike">🔻 Pincho — mata al instante</option>
+          <option value="bounce">🟡 Muelle — lo lanza por los aires</option>
+          <option value="glue">🟢 Pegamento — lo frena unos segundos</option>
+        </select>
+        ${renderTrapMap(course)}
+        <div class="muted center" id="trapHint">☝ Toca un punto verde para colocarla.</div>
+        <div class="ok" id="trapMsg"></div>
+      </div>
     `;
   }
 
@@ -331,8 +353,12 @@ export class Overlay {
     const svg = this.card.querySelector('#trapmap');
     if (!svg) return;
     const typeSel = this.$('#trapType') as HTMLSelectElement;
-    svg.querySelectorAll('[data-slot]').forEach((node) => {
+    const hint = this.card.querySelector('#trapHint') as HTMLElement | null;
+    let placed = false;
+    const slotNodes = svg.querySelectorAll('[data-slot]');
+    slotNodes.forEach((node) => {
       node.addEventListener('click', async () => {
+        if (placed) return; // one trap per run
         const [sx, sz] = (node.getAttribute('data-slot') || '').split(',').map(parseFloatSafe);
         const msg = this.$('#trapMsg');
         try {
@@ -343,8 +369,17 @@ export class Overlay {
             slotZ: sz,
             trapType: typeSel.value as TrapType3D,
           });
-          msg.textContent = '¡Trampa colocada! Tus colegas la van a sufrir.';
-          (node as SVGCircleElement).setAttribute('fill', '#ff2266');
+          placed = true;
+          const label =
+            typeSel.options[typeSel.selectedIndex]?.text.split('—')[0].trim() || 'Trampa';
+          msg.textContent = `¡${label} colocada aquí! Tus colegas la van a sufrir 😈`;
+          if (hint) hint.textContent = 'Ya has puesto tu trampa de este circuito.';
+          // Highlight the chosen slot, dim the rest.
+          slotNodes.forEach((n) => {
+            const chosen = n === node;
+            (n as SVGCircleElement).setAttribute('fill', chosen ? '#ff2266' : '#2a3550');
+            (n as SVGCircleElement).setAttribute('r', chosen ? '11' : '6');
+          });
         } catch (e: any) {
           msg.className = 'err';
           msg.textContent = `No se pudo: ${e.message}`;
@@ -690,21 +725,24 @@ function renderPodium(podium: RoomStanding[]): string {
 function renderTrapMap(course: Course3D): string {
   const W = 400;
   const H = 300;
-  const pad = 14;
+  const pad = 26;
   const halfW = course.halfWidth > 0 ? course.halfWidth : 6;
   const zSpan = course.finishZ - course.startZ || 1;
   // X (-halfW..halfW) -> horizontal; Z (start..finish) -> vertical, far at top.
   const mapX = (x: number) => pad + ((x + halfW) / (2 * halfW)) * (W - 2 * pad);
   const mapY = (z: number) => pad + (1 - (z - course.startZ) / zSpan) * (H - 2 * pad);
-  const track = `<rect x="${(pad - 4).toFixed(1)}" y="${(pad - 4).toFixed(1)}" width="${(W - 2 * pad + 8).toFixed(1)}" height="${(H - 2 * pad + 8).toFixed(1)}" rx="10" fill="#16233c"/>`;
-  const finishLine = `<line x1="${pad}" y1="${pad}" x2="${W - pad}" y2="${pad}" stroke="#38e1ff" stroke-width="2" stroke-dasharray="6 4"/>`;
+  const track = `<rect x="${(pad - 6).toFixed(1)}" y="${(pad - 6).toFixed(1)}" width="${(W - 2 * pad + 12).toFixed(1)}" height="${(H - 2 * pad + 12).toFixed(1)}" rx="10" fill="#16233c"/>`;
+  const finishLine = `<line x1="${pad}" y1="${pad}" x2="${W - pad}" y2="${pad}" stroke="#38e1ff" stroke-width="2.5" stroke-dasharray="7 5"/>`;
+  const startLine = `<line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="#4a5a80" stroke-width="2" stroke-dasharray="4 4"/>`;
+  const metaLabel = `<text x="${W / 2}" y="15" text-anchor="middle" fill="#38e1ff" font-size="12" font-weight="700" font-family="system-ui,sans-serif">META ▲</text>`;
+  const salidaLabel = `<text x="${W / 2}" y="${H - 8}" text-anchor="middle" fill="#8093b5" font-size="11" font-family="system-ui,sans-serif">SALIDA</text>`;
   const slots = course.trapSlots
     .map(
       (s) =>
-        `<circle data-slot="${s.x},${s.z}" cx="${mapX(s.x).toFixed(1)}" cy="${mapY(s.z).toFixed(1)}" r="8" fill="#22ffcc" stroke="#000" stroke-width="1" style="cursor:pointer"/>`,
+        `<circle data-slot="${s.x},${s.z}" cx="${mapX(s.x).toFixed(1)}" cy="${mapY(s.z).toFixed(1)}" r="9" fill="#22ffcc" stroke="#04121f" stroke-width="1.5" style="cursor:pointer"><title>Colocar trampa aquí</title></circle>`,
     )
     .join('');
-  return `<svg id="trapmap" class="trapmap" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${track}${finishLine}${slots}</svg>`;
+  return `<svg id="trapmap" class="trapmap" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${track}${finishLine}${startLine}${metaLabel}${salidaLabel}${slots}</svg>`;
 }
 
 function parseFloatSafe(s: string): number {

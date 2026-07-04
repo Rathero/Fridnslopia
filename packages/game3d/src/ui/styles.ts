@@ -40,6 +40,9 @@ export function injectStyles() {
   .streak { font-size: 28px; font-weight: 800; color: #ffd23c; text-align: center; }
   .big-time { font-size: 52px; font-weight: 800; text-align: center; color: #38e1ff; margin: 6px 0; }
   .muted { color: #8093b5; font-size: 13px; }
+  .desc { color: #6f81a8; font-size: 12px; line-height: 1.35; margin: -2px 0 12px; padding: 0 2px; }
+  .trapbox { border: 1px solid #3a2440; background: #170f1e; border-radius: 14px; padding: 14px; margin-top: 8px; }
+  .trapbox h2 { margin-top: 0; }
   .lb { width: 100%; border-collapse: collapse; margin-top: 8px; }
   .lb td { padding: 7px 6px; border-bottom: 1px solid #1c2740; font-size: 14px; }
   .lb td.rank { color: #8fa3c8; width: 28px; }
