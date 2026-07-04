@@ -29,6 +29,9 @@ export { simulateRun } from './sim/simulate.js';
 export type { SimResult, SimFrame } from './sim/simulate.js';
 export { autopilot } from './sim/autopilot.js';
 
+// ---- 3D aerial engine (the primary game engine) ----
+export * from './sim3d/index.js';
+
 // ---- LLM config ----
 export {
   DailyConfigSchema,

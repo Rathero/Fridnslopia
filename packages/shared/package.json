@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@dimforge/rapier2d-compat": "^0.14.0",
+    "@dimforge/rapier3d-compat": "^0.14.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
