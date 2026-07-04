@@ -6,6 +6,10 @@ export const FIXED_DT = 1 / 60;
 
 export interface Params3D {
   runSpeed: number;
+  /** Forward speed gained per second of survival (thrill ramp). Deterministic. */
+  speedAccel: number;
+  /** Cap on the ramp bonus added on top of runSpeed. */
+  speedRamp: number;
   gravity: number;
   jumpImpulse: number;
   strafeAccel: number;
@@ -17,11 +21,13 @@ export interface Params3D {
 }
 
 export const PARAMS3D: Params3D = {
-  runSpeed: 10,
+  runSpeed: 10.5,
+  speedAccel: 0.2,
+  speedRamp: 3,
   gravity: 32,
   jumpImpulse: 12.5,
-  strafeAccel: 16,
-  maxStrafe: 13,
+  strafeAccel: 19,
+  maxStrafe: 15,
   playerRadius: 0.55,
   killY: -5,
   laneStep: 2.4,
@@ -33,8 +39,8 @@ export function applyModifier3D(modifier: DailyModifier): Params3D {
   const p: Params3D = { ...PARAMS3D };
   switch (modifier) {
     case 'low_gravity': p.gravity = 20; p.jumpImpulse = 11; break;
-    case 'speed_up': p.runSpeed = 13; break;
-    case 'slippery': p.strafeAccel = 7; break;
+    case 'speed_up': p.runSpeed = 13; p.speedRamp = 4; break;
+    case 'slippery': p.strafeAccel = 8; break;
     case 'bouncy': p.jumpImpulse = 15; break;
     default: break;
   }
@@ -50,7 +56,7 @@ export function initRapier3D(): Promise<void> {
 export type Input3D = 'L' | 'R' | 'J';
 
 export interface PlayerState3D {
-  x: number; y: number; z: number; vy: number; grounded: boolean; spin: number;
+  x: number; y: number; z: number; vy: number; grounded: boolean; spin: number; speed: number;
 }
 
 /** World-space AABB of a moving obstacle at a given frame. */
@@ -130,6 +136,12 @@ export class Sim3D {
     this.world.createCollider(RAPIER.ColliderDesc.ball(this.r).setFriction(0).setRestitution(0), this.player);
   }
 
+  /** Deterministic forward speed at the current frame (base + survival ramp). */
+  baseSpeed(): number {
+    const ramp = Math.min(this.params.speedRamp, (this.frame * FIXED_DT) * this.params.speedAccel);
+    return this.params.runSpeed + ramp;
+  }
+
   input(t: Input3D) {
     if (t === 'L') this.moveLeft();
     else if (t === 'R') this.moveRight();
@@ -151,7 +163,7 @@ export class Sim3D {
 
     if (this.gluedFrames > 0) this.gluedFrames--;
     if (this.bounceCooldown > 0) this.bounceCooldown--;
-    const speed = this.gluedFrames > 0 ? this.params.runSpeed * 0.4 : this.params.runSpeed;
+    const speed = this.gluedFrames > 0 ? this.baseSpeed() * 0.4 : this.baseSpeed();
     const dx = this.targetX - t.x;
     const vx = Math.max(-this.params.maxStrafe, Math.min(this.params.maxStrafe, dx * this.params.strafeAccel));
     this.player.setLinvel({ x: vx, y: v.y, z: speed }, true);
@@ -218,7 +230,7 @@ export class Sim3D {
   getPlayer(): PlayerState3D {
     const t = this.player.translation();
     const v = this.player.linvel();
-    return { x: t.x, y: t.y, z: t.z, vy: v.y, grounded: this.grounded, spin: this.spin };
+    return { x: t.x, y: t.y, z: t.z, vy: v.y, grounded: this.grounded, spin: this.spin, speed: this.baseSpeed() };
   }
   progress(): number { return Math.max(0, Math.min(1, this.player.translation().z / this.course.finishZ)); }
   timeMs(): number { return Math.round((this.frame / 60 + this.penaltySeconds) * 1000); }

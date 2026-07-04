@@ -23,6 +23,7 @@ let data: GameData3D | null = null;
 let running = false;
 let acc = 0;
 let last = 0;
+let deaths = 0;
 const pending: Input3D[] = [];
 let events: { f: number; t: Input3D }[] = [];
 let autoEvents: Map<number, Input3D[]> | null = null;
@@ -32,7 +33,8 @@ const overlay = new Overlay((d: GameData3D) => startRun(d));
 async function boot() {
   await initRapier3D();
   requestAnimationFrame(loop);
-  overlay.showMenu();
+  if (AUTOPLAY) overlay.startDemo();
+  else overlay.showMenu();
 }
 
 function startRun(d: GameData3D) {
@@ -42,6 +44,7 @@ function startRun(d: GameData3D) {
   renderer = new Renderer3D(app, d.course, d.placedTraps);
   acc = 0;
   last = 0;
+  deaths = 0;
   pending.length = 0;
   events = [];
   autoEvents = null;
@@ -117,13 +120,14 @@ function loop(tms: number) {
     pending.length = 0;
 
     sim.step();
+    if (sim.deaths > deaths) { deaths = sim.deaths; renderer.hit(); }
     acc -= FIXED_DT_3D;
     if (sim.finished || sim.frame >= MAX_RUN_FRAMES_3D) { finish(); return; }
   }
 
   const p = sim.getPlayer();
   renderer.updateDynamic(sim.frame);
-  renderer.updatePlayer(p.x, p.y, p.z, p.spin, p.vy, p.grounded);
+  renderer.updatePlayer(p.x, p.y, p.z, p.spin, p.vy, p.grounded, p.speed);
 
   // Ghosts at the current frame.
   const f = sim.frame;

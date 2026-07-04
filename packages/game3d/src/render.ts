@@ -29,6 +29,12 @@ export class Renderer3D {
   private lastY = 0;
   private squash = 0;
   private clock = 0;
+  private shake = 0;
+  private fov = 52;
+  private speedNorm = 0;
+  private fxFlash: HTMLDivElement;
+  private fxSpeed: HTMLDivElement;
+  private streaks: THREE.Mesh[] = [];
 
   constructor(container: HTMLElement, course: Course3D, placedTraps: PlacedTrap3D[] = []) {
     this.course = course;
@@ -141,7 +147,38 @@ export class Renderer3D {
       this.scene.add(m);
     }
 
+    // Speed streaks: thin bright rods that flick past at high velocity. Pure
+    // presentation, placed each frame around the player, faded by speed.
+    const streakMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+    for (let i = 0; i < 14; i++) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 3.2), streakMat.clone());
+      m.visible = false;
+      this.streaks.push(m);
+      this.scene.add(m);
+    }
+
+    // DOM FX overlays (below the UI card at z-index 10). Cheap and reliable.
+    this.fxSpeed = this.makeOverlay(
+      `radial-gradient(ellipse at center, rgba(0,0,0,0) 42%, ${cssColor(pal.accent)} 130%)`,
+    );
+    this.fxFlash = this.makeOverlay('radial-gradient(ellipse at center, rgba(255,40,60,0.55) 0%, rgba(255,0,30,0.85) 120%)');
+
     addEventListener('resize', () => this.onResize());
+  }
+
+  private makeOverlay(background: string): HTMLDivElement {
+    const el = document.createElement('div');
+    el.style.cssText =
+      'position:fixed;inset:0;z-index:5;pointer-events:none;opacity:0;transition:none;mix-blend-mode:screen;';
+    el.style.background = background;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  /** Trigger a hit reaction (death): screen shake + red flash. */
+  hit() {
+    this.shake = Math.max(this.shake, 0.7);
+    this.fxFlash.style.opacity = '1';
   }
 
   // --- construction helpers -------------------------------------------------
@@ -313,16 +350,24 @@ export class Renderer3D {
     }
   }
 
-  updatePlayer(x: number, y: number, z: number, spin: number, vy = 0, grounded = false) {
+  updatePlayer(x: number, y: number, z: number, spin: number, vy = 0, grounded = false, speed = 10.5) {
     this.player.position.set(x, y, z);
     this.player.rotation.x = spin;
     this.playerLight.position.set(x, y + 1.2, z);
+
+    // Speed → 0..1 (10.5 base .. ~16 top) drives FOV, streaks and the vignette.
+    const target = Math.max(0, Math.min(1, (speed - 10.5) / 5.5));
+    this.speedNorm += (target - this.speedNorm) * 0.08;
 
     // Squash-and-stretch (visual only, does not touch the sim). Landing after a
     // fast descent triggers a squash that eases back out; airborne = slight
     // stretch along the fall axis.
     const landed = grounded && this.lastY - y > 0.02 && vy <= 0.1;
-    if (landed) this.squash = Math.min(0.45, this.squash + Math.abs(this.lastY - y) * 1.4);
+    if (landed) {
+      const impact = Math.abs(this.lastY - y);
+      this.squash = Math.min(0.45, this.squash + impact * 1.4);
+      if (impact > 0.35) this.shake = Math.max(this.shake, Math.min(0.28, impact * 0.35));
+    }
     this.squash *= 0.82;
     const airStretch = !grounded ? Math.min(0.12, Math.abs(vy) * 0.012) : 0;
     const sy = 1 - this.squash + airStretch;
@@ -337,20 +382,49 @@ export class Renderer3D {
     this.contact.scale.set(cs, cs, cs);
     (this.contact.material as THREE.MeshBasicMaterial).opacity = Math.max(0.08, 0.5 - h * 0.06);
 
-    // Trail.
+    // Trail (grows brighter with speed).
     const t = this.trail[this.trailIdx % this.trail.length];
     t.position.set(x, y - 0.1, z);
     t.visible = true;
     this.trailIdx++;
+    const trailPeak = 0.34 + this.speedNorm * 0.4;
     this.trail.forEach((m, i) => {
       const age = (this.trailIdx - i) % this.trail.length;
-      (m.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.34 - age * 0.018);
+      (m.material as THREE.MeshBasicMaterial).opacity = Math.max(0, trailPeak - age * 0.02);
     });
 
-    // Aerial camera: high, tilted, tracking Z with slight lateral follow.
+    // Speed streaks flick past the runner, denser/brighter the faster you go.
+    const streakOn = this.speedNorm > 0.12;
+    this.streaks.forEach((m, i) => {
+      if (!streakOn) { m.visible = false; return; }
+      m.visible = true;
+      const seed = (i * 12.9898 + this.clock * 0.13) % (Math.PI * 2);
+      const side = i % 2 ? 1 : -1;
+      const lane = side * (2.4 + ((i * 1.7) % 4));
+      const zoff = ((this.clock * 0.9 + i * 3.1) % 24) - 4; // scrolls toward camera
+      m.position.set(x + lane, 0.6 + ((i * 0.9) % 4), z + 10 - zoff);
+      (m.material as THREE.MeshBasicMaterial).opacity =
+        this.speedNorm * (0.18 + 0.14 * Math.sin(seed));
+    });
+
+    // Aerial camera: high, tilted, tracking Z with slight lateral follow. FOV
+    // widens with speed for a rush; a decaying shake kicks on death/hard land.
+    this.fov += ((52 + this.speedNorm * 11) - this.fov) * 0.08;
+    this.camera.fov = this.fov;
+    this.camera.updateProjectionMatrix();
+    const sh = this.shake;
+    const shakeX = sh > 0 ? Math.sin(this.clock * 1.7) * sh : 0;
+    const shakeY = sh > 0 ? Math.cos(this.clock * 2.3) * sh * 0.8 : 0;
+    this.shake *= 0.85;
     const camX = x * 0.35;
-    this.camera.position.set(camX, y + 17, z - 11.5);
-    this.camera.lookAt(x * 0.5, 1.2, z + 7);
+    this.camera.position.set(camX + shakeX, y + 17 + shakeY, z - 11.5);
+    this.camera.lookAt(x * 0.5 + shakeX, 1.2, z + 7);
+
+    // DOM FX: speed vignette tracks speed; red flash decays after a hit.
+    this.fxSpeed.style.opacity = String(this.speedNorm * 0.5);
+    const cur = parseFloat(this.fxFlash.style.opacity || '0');
+    if (cur > 0.01) this.fxFlash.style.opacity = String(cur * 0.86);
+    else this.fxFlash.style.opacity = '0';
 
     // Keep the sky centred on the camera so it always surrounds us.
     this.sky.position.copy(this.camera.position);
@@ -388,6 +462,8 @@ export class Renderer3D {
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement);
     }
+    this.fxSpeed.remove();
+    this.fxFlash.remove();
   }
 
   render() {
@@ -399,4 +475,10 @@ export class Renderer3D {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
+}
+
+/** A THREE palette hex int (or CSS string) → a `#rrggbb` string for CSS. */
+function cssColor(c: number | string): string {
+  if (typeof c === 'string') return c;
+  return '#' + (c & 0xffffff).toString(16).padStart(6, '0');
 }

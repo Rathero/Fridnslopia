@@ -194,12 +194,18 @@ export class Overlay {
     }
   }
 
-  private async playQuick() {
+  private async playQuick(autoplay = false) {
     this.loading('Preparando circuito…');
     const { course } = generateVerifiedCourse3D(PRACTICE_SEED, defaultConfig);
     const local = loadLocalGhost(PRACTICE_SEED);
     const ghosts: PreparedGhost3D[] = local ? await prepareGhosts3D(course, [local], []) : [];
-    this.startRun({ course, placedTraps: [], ghosts, online: false });
+    this.startRun({ course, placedTraps: [], ghosts, online: false, autoplay });
+  }
+
+  /** Kick off an autopiloted offline run immediately (used by ?autoplay demos/CI). */
+  startDemo() {
+    if (!getHandle()) setHandle('Demo');
+    this.playQuick(true);
   }
 
   private startRun(data: GameData3D) {
