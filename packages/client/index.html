@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>TRAMPA</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #06070d;
+        overflow: hidden;
+        overscroll-behavior: none;
+        touch-action: none;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      #game {
+        width: 100vw;
+        height: 100vh;
+      }
+      #game canvas {
+        display: block;
+        touch-action: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

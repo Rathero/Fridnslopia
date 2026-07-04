@@ -1,0 +1,22 @@
+{
+  "name": "trampa",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TRAMPA — competitive async-first mobile obstacle-race game (MVP)",
+  "workspaces": [
+    "packages/shared",
+    "packages/client",
+    "packages/server"
+  ],
+  "scripts": {
+    "build:shared": "npm run build --workspace @trampa/shared",
+    "build": "npm run build:shared && npm run build --workspace @trampa/server",
+    "dev:client": "npm run dev --workspace @trampa/client",
+    "dev:server": "npm run dev --workspace @trampa/server",
+    "test": "npm run build:shared && npm run test --workspace @trampa/shared",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

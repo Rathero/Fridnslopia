@@ -1,0 +1,33 @@
+{
+  "name": "@trampa/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TRAMPA backend — leagues, daily courses, runs, traps, streaks (M3/M4/M5)",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "migrate": "tsx src/migrate.ts",
+    "seed": "tsx src/seed.ts",
+    "smoke": "tsx src/smoke.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@trampa/shared": "*",
+    "express": "^4.19.2",
+    "pg": "^8.12.0",
+    "cors": "^2.8.5",
+    "zod": "^3.23.8",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/pg": "^8.11.6",
+    "@types/cors": "^2.8.17",
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}
