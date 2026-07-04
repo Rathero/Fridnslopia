@@ -1,5 +1,5 @@
 import type { Course3D, PlacedTrap3D } from './course3d.js';
-import { Sim3D, initRapier3D, type Input3D } from './sim3d.js';
+import { Sim3D, initRapier3D, type Input3D, type TrapHit3D } from './sim3d.js';
 
 export const MAX_RUN_FRAMES_3D = 60 * 180; // 3 min safety cap
 
@@ -13,6 +13,8 @@ export interface SimResult3D {
   frames: SimFrame3D[];
   deaths: number;
   frameCount: number;
+  nearMisses: number;
+  trapHits: TrapHit3D[];
 }
 
 /**
@@ -56,6 +58,8 @@ export async function simulateRun3D(
     frames,
     deaths: sim.deaths,
     frameCount: sim.frame,
+    nearMisses: sim.nearMisses,
+    trapHits: sim.trapHits,
   };
   sim.free();
   return result;

@@ -344,13 +344,15 @@ export class Overlay {
         <h2>😈 Deja una trampa</h2>
         <p class="muted">Sabotea a quien corra este circuito <b>después que tú</b>: si tu colega la pisa,
         pierde tiempo (o muere) y tú subes en el <b>Ranking Saboteador</b>. Tú no la sufres.</p>
-        <p class="muted"><b>1)</b> elige el tipo &nbsp; <b>2)</b> toca un punto
-        <span style="color:#22ffcc">●</span> del mapa (son los sitios permitidos).</p>
+        <p class="muted">Cada trampa es un <b>reto de habilidad</b>: si tu colega
+        la torea, no le cuesta nada (y suma estilo); si falla, paga tiempo y tú
+        sumas en el ranking. <b>1)</b> elige el tipo &nbsp; <b>2)</b> toca un punto
+        <span style="color:#22ffcc">●</span> del mapa.</p>
         <label>Tipo de trampa</label>
         <select id="trapType">
-          <option value="spike">🔻 Pincho — mata al instante</option>
-          <option value="bounce">🟡 Muelle — lo lanza por los aires</option>
-          <option value="glue">🟢 Pegamento — lo frena unos segundos</option>
+          <option value="spike">🔻 Pincho — mata… si no lo SALTA</option>
+          <option value="glue">🟢 Pegamento — frena… si no lo DASHea</option>
+          <option value="bounce">🟡 Muelle — lo lanza y descoloca</option>
         </select>
         ${renderTrapMap(course)}
         <div class="muted center" id="trapHint">☝ Toca un punto verde para colocarla.</div>

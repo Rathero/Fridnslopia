@@ -32,6 +32,7 @@ export class Renderer3D {
   private container: HTMLElement;
   private placedTraps: PlacedTrap3D[] = [];
   private finishGlow: THREE.Mesh[] = [];
+  private trapFx: THREE.Mesh[] = [];
   private lastY = 0;
   private squash = 0;
   private clock = 0;
@@ -438,6 +439,16 @@ export class Renderer3D {
       const mat = g.material as THREE.MeshStandardMaterial;
       mat.emissiveIntensity = pulse;
     }
+    // Traps pulse + rings breathe so they telegraph the danger.
+    const tp = 0.6 + 0.4 * Math.sin(this.clock * 0.13);
+    for (const fx of this.trapFx) {
+      if (fx.geometry.type === 'OctahedronGeometry') {
+        (fx.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.6 + tp;
+        fx.rotation.y += 0.04;
+      } else {
+        (fx.material as THREE.MeshBasicMaterial).opacity = 0.3 + tp * 0.4;
+      }
+    }
   }
 
   updatePlayer(x: number, y: number, z: number, spin: number, vy = 0, grounded = false, speed = 10.5) {
@@ -533,11 +544,22 @@ export class Renderer3D {
       const color = t.trapType === 'spike' ? 0xff2266 : t.trapType === 'bounce' ? 0xffcc00 : 0x22ffcc;
       const m = new THREE.Mesh(
         new THREE.OctahedronGeometry(0.7, 0),
-        this.mat(color, color, 0.7, 0.4, 0.2),
+        this.mat(color, color, 0.9, 0.4, 0.2),
       );
       m.position.set(t.slotX, 0.9, t.slotZ);
       m.castShadow = true;
       this.scene.add(m);
+      this.trapFx.push(m);
+
+      // Ground warning ring so the trap telegraphs from far away.
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.95, 1.4, 28),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(t.slotX, 0.06, t.slotZ);
+      this.scene.add(ring);
+      this.trapFx.push(ring);
     }
   }
 

@@ -75,8 +75,12 @@ export function obstacleAABB(o: Obstacle, frame: number) {
 
 interface Danger3D {
   effect: 'kill' | 'bounce' | 'glue';
+  trap: PlacedTrap3D;
   box: { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number };
 }
+
+/** A trap that actually caught the runner (exact, deterministic). */
+export interface TrapHit3D { slotX: number; slotZ: number; trapType: string }
 
 /**
  * Deterministic aerial runner sim (fixed 60Hz, seeded course, fixed body order)
@@ -93,6 +97,8 @@ export class Sim3D {
   deaths = 0;
   nearMisses = 0;
   penaltySeconds = 0;
+  /** Traps that actually applied their effect (exact saboteur accounting). */
+  readonly trapHits: TrapHit3D[] = [];
 
   private player!: RAPIER.RigidBody;
   private targetX = 0;
@@ -107,6 +113,8 @@ export class Sim3D {
   private dashCooldown = 0;
   private grazed = new Set<number>();
   private dangers: Danger3D[] = [];
+  private trapHitSet = new Set<Danger3D>();
+  private trapBeaten = new Set<Danger3D>();
 
   constructor(course: Course3D, placedTraps: PlacedTrap3D[] = []) {
     this.course = course;
@@ -126,9 +134,12 @@ export class Sim3D {
     // Placed traps become manual-overlap dangers.
     for (const t of placedTraps) {
       const effect: Danger3D['effect'] = t.trapType === 'bounce' ? 'bounce' : t.trapType === 'glue' ? 'glue' : 'kill';
+      // Spikes sit low so a well-timed jump clears them (a jump-check).
+      const maxY = effect === 'kill' ? 1.35 : 2.0;
       this.dangers.push({
         effect,
-        box: { minX: t.slotX - 1.1, maxX: t.slotX + 1.1, minY: 0, maxY: 2.0, minZ: t.slotZ - 0.9, maxZ: t.slotZ + 0.9 },
+        trap: t,
+        box: { minX: t.slotX - 1.1, maxX: t.slotX + 1.1, minY: 0, maxY, minZ: t.slotZ - 0.9, maxZ: t.slotZ + 0.9 },
       });
     }
 
@@ -203,18 +214,28 @@ export class Sim3D {
       const b = obstacleAABB(o, this.frame);
       if (this.overlaps(p, b.minX, b.maxX, b.minY, b.maxY, b.minZ, b.maxZ)) { this.die(); break; }
     }
-    // Placed traps.
+    // Placed traps — each is a skill-check: beat it and you pay nothing (and
+    // score style); fail and it costs you AND credits the saboteur (exact).
     if (!this.finished) {
       for (const d of this.dangers) {
         const b = d.box;
         if (!this.overlaps(p, b.minX, b.maxX, b.minY, b.maxY, b.minZ, b.maxZ)) continue;
-        if (d.effect === 'kill') { this.die(); break; }
-        if (d.effect === 'bounce' && this.bounceCooldown === 0) {
-          const lv = this.player.linvel();
-          this.player.setLinvel({ x: lv.x, y: this.params.jumpImpulse * 1.15, z: lv.z }, true);
-          this.bounceCooldown = 18;
-        } else if (d.effect === 'glue') {
+        if (d.effect === 'glue') {
+          // Dashing straight through the glue negates it — a clean beat.
+          if (this.dashFrames > 0) { this.beatTrap(d); continue; }
           this.gluedFrames = Math.max(this.gluedFrames, 26);
+          this.recordTrapHit(d);
+        } else if (d.effect === 'bounce') {
+          if (this.bounceCooldown === 0) {
+            const lv = this.player.linvel();
+            this.player.setLinvel({ x: lv.x, y: this.params.jumpImpulse * 1.15, z: lv.z }, true);
+            this.bounceCooldown = 18;
+            this.recordTrapHit(d);
+          }
+        } else {
+          this.recordTrapHit(d);
+          this.die();
+          break;
         }
       }
     }
@@ -266,6 +287,20 @@ export class Sim3D {
     this.bounceCooldown = 0;
     this.dashFrames = 0;
     this.dashCooldown = 0;
+  }
+
+  /** Credit a trap that caught the runner — once per trap (deterministic). */
+  private recordTrapHit(d: Danger3D) {
+    if (this.trapHitSet.has(d)) return;
+    this.trapHitSet.add(d);
+    this.trapHits.push({ slotX: d.trap.slotX, slotZ: d.trap.slotZ, trapType: d.trap.trapType });
+  }
+
+  /** Beating a trap (e.g. dashing through glue) scores style — once per trap. */
+  private beatTrap(d: Danger3D) {
+    if (this.trapBeaten.has(d)) return;
+    this.trapBeaten.add(d);
+    this.nearMisses += 2; // worth more than a plain graze
   }
 
   getPlayer(): PlayerState3D {

@@ -41,13 +41,14 @@ export async function getNotifications(userId: string): Promise<NotificationRow[
   return rows;
 }
 
-/** Proximity (tiles) within which a death is attributed to a trap slot. */
-const TRAP_HIT_RADIUS = 1.6;
+/** Small tolerance when matching a recorded hit back to a placed trap slot. */
+const SLOT_EPS = 0.05;
 
 /**
- * Heuristic trap-hit accounting. If the re-sim recorded deaths and the runner
- * passed close to a trap slot they don't own, credit that trap with a hit and
- * notify its owner. Best-effort — never throws.
+ * Exact trap-hit accounting. The deterministic re-sim records precisely which
+ * traps caught the runner (a trap the runner dashed/jumped past does NOT count
+ * — that's the skill-check). We credit each caught trap once and notify its
+ * owner. Best-effort — never throws.
  */
 export async function processTrapHits(
   course: Course3D,
@@ -56,16 +57,13 @@ export async function processTrapHits(
   placedTraps: PlacedTrap3D[],
 ): Promise<void> {
   try {
-    if (sim.deaths <= 0 || sim.frames.length === 0) return;
+    if (!sim.trapHits?.length) return;
 
-    for (const trap of placedTraps) {
-      if (!trap.userId || trap.userId === runnerUserId) continue; // not your own trap
-      const near = sim.frames.some(
-        (f) =>
-          Math.abs(f.x - trap.slotX) <= TRAP_HIT_RADIUS &&
-          Math.abs(f.z - trap.slotZ) <= TRAP_HIT_RADIUS,
+    for (const hit of sim.trapHits) {
+      const trap = placedTraps.find(
+        (t) => Math.abs(t.slotX - hit.slotX) < SLOT_EPS && Math.abs(t.slotZ - hit.slotZ) < SLOT_EPS,
       );
-      if (!near) continue;
+      if (!trap || !trap.userId || trap.userId === runnerUserId) continue; // not your own trap
 
       const { rows } = await query<{ hits: number }>(
         `update traps set hits = hits + 1
