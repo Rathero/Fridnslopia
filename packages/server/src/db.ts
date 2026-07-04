@@ -4,8 +4,21 @@ import { DATABASE_URL } from './env.js';
 
 const { Pool } = pg;
 
+// Managed Postgres (Supabase/Neon/etc.) requires TLS; local dev doesn't. Enable
+// SSL for non-local hosts (or when PGSSL=require). In serverless keep the pool
+// tiny so many warm instances don't exhaust the database's connection cap.
+const isRemote =
+  process.env.PGSSL === 'require' ||
+  /sslmode=require|supabase|neon|amazonaws|render|railway/i.test(DATABASE_URL) ||
+  !/localhost|127\.0\.0\.1/.test(DATABASE_URL);
+
 /** Shared connection pool. One per process is the recommended pg pattern. */
-export const pool = new Pool({ connectionString: DATABASE_URL });
+export const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: isRemote ? { rejectUnauthorized: false } : undefined,
+  max: Number(process.env.PGPOOL_MAX ?? (process.env.VERCEL ? 2 : 10)),
+  idleTimeoutMillis: 10_000,
+});
 
 pool.on('error', (err) => {
   // Idle client errors must not crash the process.
