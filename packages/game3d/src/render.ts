@@ -5,7 +5,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { Course3D, PlacedTrap3D } from '@trampa/shared';
 import { obstacleAABB } from '@trampa/shared';
-import { Character } from './game/character.js';
+import { makeRunner, type Runner } from './game/runners.js';
 import { SKINS, equippedSkin, type Skin } from './cosmetics.js';
 
 const FIXED_DT = 1 / 60;
@@ -22,7 +22,7 @@ export class Renderer3D {
   readonly renderer: THREE.WebGLRenderer;
   private course: Course3D;
   private player: THREE.Group;
-  private character: Character;
+  private character: Runner;
   private playerLight: THREE.PointLight;
   private contact: THREE.Mesh;
   private movers: { mesh: THREE.Mesh; edge: THREE.LineSegments; baseX: number; o: any }[] = [];
@@ -30,7 +30,7 @@ export class Renderer3D {
   private sky: THREE.Mesh;
   private trail: THREE.Mesh[] = [];
   private trailIdx = 0;
-  private ghostChars: Character[] = [];
+  private ghostChars: Runner[] = [];
   private lastX = 0;
   private container: HTMLElement;
   private placedTraps: PlacedTrap3D[] = [];
@@ -101,8 +101,8 @@ export class Renderer3D {
     this.buildFinish();
     this.buildTraps();
 
-    // Player: a procedural little character built from the equipped skin.
-    this.character = new Character(equippedSkin());
+    // Player: a loaded 3D model if the equipped skin has one, else procedural.
+    this.character = makeRunner(equippedSkin());
     this.player = this.character.group;
     this.scene.add(this.player);
 
@@ -129,7 +129,7 @@ export class Renderer3D {
     for (let i = 0; i < 5; i++) {
       const base = SKINS[(i + 1) % SKINS.length];
       const ghostSkin: Skin = { ...base, body: GHOST_COLORS[i], accent: GHOST_COLORS[i] };
-      const c = new Character(ghostSkin, { ghost: true });
+      const c = makeRunner(ghostSkin, true);
       c.setVisible(false);
       this.ghostChars.push(c);
       this.scene.add(c.group);

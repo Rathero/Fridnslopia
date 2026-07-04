@@ -20,7 +20,8 @@ import {
   getUserId,
   setUserId,
 } from '../config.js';
-import { SKINS, ownedSkins, ownSkin, equipSkin, equippedSkin } from '../cosmetics.js';
+import { SKINS, allSkins, ownedSkins, ownSkin, equipSkin, equippedSkin } from '../cosmetics.js';
+import { hasModel } from '../game/modelLoader.js';
 import { prepareGhosts3D, type PreparedGhost3D } from '../game/ghosts3d.js';
 import type { GameData3D, RunResult3D } from '../types.js';
 import { injectStyles } from './styles.js';
@@ -640,17 +641,21 @@ export class Overlay {
     this.show();
     const owned = ownedSkins();
     const eq = equippedSkin();
-    const rows = SKINS.map((s) => {
+    const rows = allSkins().map((s) => {
       const isOwned = owned.includes(s.id);
       const isEq = eq.id === s.id;
+      const is3d = hasModel(s.id);
       const btn = isEq
         ? '<span class="chip">equipado</span>'
         : isOwned
           ? `<button class="btn ghost" data-equip="${s.id}" style="width:auto;margin:0;padding:8px 12px">Equipar</button>`
           : `<button class="btn" data-buy="${s.id}" style="width:auto;margin:0;padding:8px 12px">${(s.price / 100).toFixed(2)}€</button>`;
+      const tag = is3d
+        ? '<span class="chip" style="font-size:10px;color:#8affd6;border-color:#2a6">modelo 3D</span>'
+        : `<div class="muted" style="font-size:11px">${accessoryLabel(s.accessory)}</div>`;
       return `<div class="skin">
         <div class="swatch" style="background:#${s.body.toString(16).padStart(6, '0')}">${s.emoji}</div>
-        <div class="grow"><b>${s.name}</b><div class="muted" style="font-size:11px">${accessoryLabel(s.accessory)}</div></div>
+        <div class="grow"><b>${escapeHtml(s.name)}</b>${tag}</div>
         ${btn}
       </div>`;
     }).join('');

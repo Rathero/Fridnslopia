@@ -2,6 +2,18 @@ import * as THREE from 'three';
 import type { Skin } from '../cosmetics.js';
 
 /**
+ * Common interface for anything the renderer can drive as the runner — the
+ * procedural {@link Character} or a loaded GLB {@link CharacterModel}. Lets us
+ * swap real 3D models in without touching the render loop.
+ */
+export interface Runner {
+  readonly group: THREE.Group;
+  setPose(spin: number, grounded: boolean, lean: number, squash: number): void;
+  setVisible(v: boolean): void;
+  dispose(): void;
+}
+
+/**
  * A procedural little runner character built entirely from Three.js primitives
  * — no external model files, so it ships in the static bundle and passes the
  * strict CSP. The body archetype + head accessory come from the equipped skin,
@@ -11,7 +23,7 @@ import type { Skin } from '../cosmetics.js';
  * Local space: origin sits at the sim's ball centre (~0.75 above the floor),
  * feet reach down to ~-0.55, the character faces +Z (the run direction).
  */
-export class Character {
+export class Character implements Runner {
   readonly group = new THREE.Group();
   private bodyPivot = new THREE.Group();
   private body!: THREE.Mesh;

@@ -7,6 +7,8 @@
  * accent trim, a body archetype and a head accessory — all built procedurally
  * in Three.js (no external assets, CSP-safe). See `game/character.ts`.
  */
+import { modelSkins } from './game/modelLoader.js';
+
 export type CharShape = 'bean' | 'bot' | 'blob';
 export type CharAccessory =
   | 'none' | 'cap' | 'crown' | 'horns' | 'antenna' | 'halo' | 'visor' | 'headphones' | 'mohawk';
@@ -37,10 +39,38 @@ export const SKINS: Skin[] = [
 const OWNED_KEY = 'trampa.owned';
 const EQUIPPED_KEY = 'trampa.skin';
 
+/**
+ * Loaded GLB models (Meshy/CC0) surfaced as skins. Free + owned by default so
+ * you can equip and see them straight away. Overrides a procedural skin sharing
+ * the same id. Empty until a manifest is loaded, so the game is unchanged
+ * without any models.
+ */
+function modelDerivedSkins(): Skin[] {
+  return modelSkins().map((m) => ({
+    id: m.id, name: m.name, price: 0,
+    body: m.tint ?? 0xffffff, trail: 0x223, accent: m.tint ?? 0x38e1ff,
+    shape: 'bean' as const, accessory: 'none' as const, emoji: m.emoji ?? '🧊',
+  }));
+}
+
+/** Procedural skins + any loaded 3D models (models first, overriding by id). */
+export function allSkins(): Skin[] {
+  const models = modelDerivedSkins();
+  const ids = new Set(models.map((m) => m.id));
+  return [...models, ...SKINS.filter((s) => !ids.has(s.id))];
+}
+
+/** True for skins owned by default (free / model-backed). */
+export function isFree(id: string): boolean {
+  const s = allSkins().find((x) => x.id === id);
+  return !!s && s.price === 0;
+}
+
 export function ownedSkins(): string[] {
   const raw = localStorage.getItem(OWNED_KEY);
   const owned = raw ? (JSON.parse(raw) as string[]) : [];
   if (!owned.includes('default')) owned.push('default');
+  for (const s of allSkins()) if (s.price === 0 && !owned.includes(s.id)) owned.push(s.id);
   return owned;
 }
 
@@ -54,7 +84,7 @@ export function ownSkin(id: string) {
 
 export function equippedSkin(): Skin {
   const id = localStorage.getItem(EQUIPPED_KEY) || 'default';
-  return SKINS.find((s) => s.id === id) || SKINS[0];
+  return allSkins().find((s) => s.id === id) || SKINS[0];
 }
 
 export function equipSkin(id: string) {
