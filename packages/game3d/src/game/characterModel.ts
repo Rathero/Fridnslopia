@@ -25,32 +25,6 @@ export class CharacterModel implements Runner {
     // Orient (some models face -Z; yaw corrects it).
     scene.rotation.y = skin.yaw ?? 0;
 
-    // Auto-fit height, then centre X/Z and drop feet to FEET_Y.
-    scene.updateWorldMatrix(true, true);
-    let box = new THREE.Box3().setFromObject(scene);
-    const size = new THREE.Vector3(); box.getSize(size);
-    const s = size.y > 1e-3 ? (TARGET_HEIGHT * (skin.scale ?? 1)) / size.y : 1;
-    scene.scale.setScalar(s);
-    scene.updateWorldMatrix(true, true);
-    box = new THREE.Box3().setFromObject(scene);
-    const centre = new THREE.Vector3(); box.getCenter(centre);
-    scene.position.x -= centre.x;
-    scene.position.z -= centre.z;
-    scene.position.y += FEET_Y - box.min.y;
-
-    // Materials: shadows for the player, translucent tint for ghosts.
-    scene.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      mesh.castShadow = !opts.ghost;
-      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (const m of mats) {
-        const mm = m as THREE.MeshStandardMaterial;
-        if (opts.ghost) { mm.transparent = true; mm.opacity = 0.4; mm.depthWrite = false; }
-        if (skin.tint && mm.color) mm.color.setHex(skin.tint);
-      }
-    });
-
     // Animations: map semantic actions to clips by name (manifest override first,
     // then a fuzzy match), so a Meshy/Mixamo export "just works".
     this.mixer = new THREE.AnimationMixer(scene);
@@ -67,6 +41,28 @@ export class CharacterModel implements Runner {
     if (base) this.actions.run = this.mixer.clipAction(base);
     if (jump) this.actions.jump = this.mixer.clipAction(jump);
     if (this.actions.run) { this.current = this.actions.run; this.current.play(); }
+
+    // Sizing: Meshy exports at a known height (~1.6 m, origin at the feet), and
+    // Draco/meshopt QUANTIZE positions (geometry becomes 0–1 with a node scale),
+    // which makes runtime bounds of a *skinned* mesh unreliable — measuring here
+    // would blow the model up. So we trust the export size and expose a manifest
+    // `scale` knob for anything that isn't pre-sized. Feet sit at FEET_Y.
+    this.mixer.update(0.1); // pose one frame so it isn't stuck in bind pose
+    scene.scale.setScalar((TARGET_HEIGHT / 1.6) * (skin.scale ?? 1));
+    scene.position.y = FEET_Y;
+
+    // Materials: shadows for the player, translucent tint for ghosts.
+    scene.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.castShadow = !opts.ghost;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        const mm = m as THREE.MeshStandardMaterial;
+        if (opts.ghost) { mm.transparent = true; mm.opacity = 0.4; mm.depthWrite = false; }
+        if (skin.tint && mm.color) mm.color.setHex(skin.tint);
+      }
+    });
   }
 
   setPose(_spin: number, grounded: boolean, lean: number, squash: number): void {

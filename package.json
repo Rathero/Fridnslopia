@@ -19,5 +19,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@gltf-transform/cli": "^4.4.1"
   }
 }
