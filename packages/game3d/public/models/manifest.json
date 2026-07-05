@@ -1,0 +1,26 @@
+[
+  {
+    "id": "runner-cyan",
+    "name": "Chispa",
+    "file": "runner-cyan.glb",
+    "emoji": "🟦",
+    "scale": 1,
+    "yaw": 0
+  },
+  {
+    "id": "runner-royal",
+    "name": "Realeza",
+    "file": "runner-royal.glb",
+    "emoji": "👑",
+    "scale": 1,
+    "yaw": 0
+  },
+  {
+    "id": "runner-toxic",
+    "name": "Tóxico",
+    "file": "runner-toxic.glb",
+    "emoji": "☢️",
+    "scale": 1,
+    "yaw": 0
+  }
+]

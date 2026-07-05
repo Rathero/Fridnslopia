@@ -1,0 +1,14 @@
+[
+  {
+    "id": "neon-tower",
+    "name": "Torre neón",
+    "file": "neon-tower.glb",
+    "biome": "neon"
+  },
+  {
+    "id": "ice-crystal",
+    "name": "Cristal de hielo",
+    "file": "ice-crystal.glb",
+    "biome": "ice"
+  }
+]
