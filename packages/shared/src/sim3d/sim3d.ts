@@ -302,7 +302,9 @@ export class Sim3D {
       }
     }
 
-    if (this.player.translation().z >= this.course.finishZ) this.finished = true;
+    // A run that died this frame must never also count as finished (a lethal
+    // hazard placed near the finish line could otherwise set both).
+    if (!this.dead && this.player.translation().z >= this.course.finishZ) this.finished = true;
   }
 
   private overlaps(p: { x: number; y: number; z: number }, minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number, extra = 0): boolean {
