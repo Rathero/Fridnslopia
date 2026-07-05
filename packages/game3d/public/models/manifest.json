@@ -38,5 +38,13 @@
     "emoji": "👾",
     "scale": 1,
     "yaw": 0
+  },
+  {
+    "id": "runner-angel",
+    "name": "Aura",
+    "file": "runner-angel.glb",
+    "emoji": "😇",
+    "scale": 1,
+    "yaw": 0
   }
 ]
