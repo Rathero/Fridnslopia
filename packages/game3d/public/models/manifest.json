@@ -22,5 +22,21 @@
     "emoji": "☢️",
     "scale": 1,
     "yaw": 0
+  },
+  {
+    "id": "runner-bot",
+    "name": "Voltio",
+    "file": "runner-bot.glb",
+    "emoji": "🤖",
+    "scale": 1,
+    "yaw": 0
+  },
+  {
+    "id": "runner-grape",
+    "name": "Uva",
+    "file": "runner-grape.glb",
+    "emoji": "👾",
+    "scale": 1,
+    "yaw": 0
   }
 ]
