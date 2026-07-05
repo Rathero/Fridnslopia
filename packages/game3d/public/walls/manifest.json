@@ -1,0 +1,12 @@
+[
+  {
+    "id": "wall-block",
+    "name": "Muro",
+    "file": "wall-block.glb"
+  },
+  {
+    "id": "wall-neon",
+    "name": "Barrera",
+    "file": "wall-neon.glb"
+  }
+]

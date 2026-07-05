@@ -1,0 +1,20 @@
+[
+  {
+    "id": "trap-spike",
+    "type": "spike",
+    "name": "Pinchos",
+    "file": "trap-spike.glb"
+  },
+  {
+    "id": "trap-glue",
+    "type": "glue",
+    "name": "Pegamento",
+    "file": "trap-glue.glb"
+  },
+  {
+    "id": "trap-bounce",
+    "type": "bounce",
+    "name": "Muelle",
+    "file": "trap-bounce.glb"
+  }
+]

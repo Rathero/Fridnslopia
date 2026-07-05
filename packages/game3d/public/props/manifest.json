@@ -10,5 +10,53 @@
     "name": "Cristal de hielo",
     "file": "ice-crystal.glb",
     "biome": "ice"
+  },
+  {
+    "id": "toxic-pipe",
+    "name": "Tubería tóxica",
+    "file": "toxic-pipe.glb",
+    "biome": "toxic"
+  },
+  {
+    "id": "toxic-barrel",
+    "name": "Bidón",
+    "file": "toxic-barrel.glb",
+    "biome": "toxic"
+  },
+  {
+    "id": "sunset-ruin",
+    "name": "Ruina",
+    "file": "sunset-ruin.glb",
+    "biome": "sunset"
+  },
+  {
+    "id": "sunset-cactus",
+    "name": "Cactus",
+    "file": "sunset-cactus.glb",
+    "biome": "sunset"
+  },
+  {
+    "id": "neon-hologram",
+    "name": "Holograma",
+    "file": "neon-hologram.glb",
+    "biome": "neon"
+  },
+  {
+    "id": "neon-arcade",
+    "name": "Arcade",
+    "file": "neon-arcade.glb",
+    "biome": "neon"
+  },
+  {
+    "id": "ice-berg",
+    "name": "Témpano",
+    "file": "ice-berg.glb",
+    "biome": "ice"
+  },
+  {
+    "id": "ice-tree",
+    "name": "Pino nevado",
+    "file": "ice-tree.glb",
+    "biome": "ice"
   }
 ]

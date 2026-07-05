@@ -1,0 +1,14 @@
+[
+  {
+    "id": "hazard-crusher",
+    "kind": "crusher",
+    "name": "Prensa",
+    "file": "hazard-crusher.glb"
+  },
+  {
+    "id": "hazard-spinner",
+    "kind": "spinner",
+    "name": "Aspa",
+    "file": "hazard-spinner.glb"
+  }
+]
