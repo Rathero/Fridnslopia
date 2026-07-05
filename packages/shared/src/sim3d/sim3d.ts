@@ -65,17 +65,52 @@ export interface PlayerState3D {
   nearMisses: number; steer: number;
 }
 
-/** World-space AABB of a moving obstacle at a given frame. */
+/** World-space AABB of a moving obstacle at a given frame.
+ *  - `mover`   sweeps laterally (dx).
+ *  - `crusher` bobs vertically (dy): rests up (dy=0), slams down for half its cycle.
+ *  - `spinner` returns its conservative swept-disc box (used by the autopilot's
+ *    lane scorer + graze detection; the actual kill test is `spinnerHit`, precise).
+ */
 export function obstacleAABB(o: Obstacle, frame: number) {
-  let dx = 0;
+  let dx = 0, dy = 0;
   if (o.kind === 'mover' && o.amp && o.period) {
     dx = o.amp * Math.sin((2 * Math.PI * (frame + (o.phase ?? 0))) / o.period);
+  } else if (o.kind === 'crusher' && o.amp && o.period) {
+    const s = Math.sin((2 * Math.PI * (frame + (o.phase ?? 0))) / o.period);
+    dy = s > 0 ? -o.amp * s : 0;
+  } else if (o.kind === 'spinner') {
+    const L = o.amp ?? o.w / 2;
+    return {
+      minX: o.x - L, maxX: o.x + L,
+      minY: o.y - o.h / 2, maxY: o.y + o.h / 2,
+      minZ: o.z - L, maxZ: o.z + L, dx: 0,
+    };
   }
   return {
     minX: o.x + dx - o.w / 2, maxX: o.x + dx + o.w / 2,
-    minY: o.y - o.h / 2, maxY: o.y + o.h / 2,
+    minY: o.y + dy - o.h / 2, maxY: o.y + dy + o.h / 2,
     minZ: o.z - o.d / 2, maxZ: o.z + o.d / 2, dx,
   };
+}
+
+/** Spinner arm angle (radians) at a frame — shared by sim collision + renderer. */
+export function spinnerAngle(o: Obstacle, frame: number): number {
+  return (2 * Math.PI * (frame + (o.phase ?? 0))) / (o.period || 120);
+}
+
+/** Precise spinner collision: player ball vs the rotating bar segment (in the XZ
+ *  plane, gated by vertical overlap). Deterministic from the frame. */
+export function spinnerHit(o: Obstacle, frame: number, p: { x: number; y: number; z: number }, r: number): boolean {
+  if (Math.abs(p.y - o.y) > o.h / 2 + r) return false; // bar out of vertical reach
+  const L = o.amp ?? o.w / 2;
+  const th = spinnerAngle(o, frame);
+  const dirX = Math.cos(th), dirZ = Math.sin(th);
+  const px = p.x - o.x, pz = p.z - o.z;
+  let t = px * dirX + pz * dirZ;            // project onto the arm axis
+  if (t < -L) t = -L; else if (t > L) t = L;
+  const ex = px - t * dirX, ez = pz - t * dirZ;
+  const reach = r + (o.d ?? 0.6) / 2;
+  return ex * ex + ez * ez < reach * reach;
 }
 
 interface Danger3D {
@@ -208,10 +243,17 @@ export class Sim3D {
     if (this.grounded) this.framesSinceGround = 0; else this.framesSinceGround++;
     this.spin += (speed * FIXED_DT) / this.r;
 
-    // Obstacles (kill).
+    // Obstacles (kill). Spinners use a precise rotating-segment test; the rest
+    // are manual AABB overlaps (crushers only reach the player while slammed).
     for (const o of this.course.obstacles) {
-      const b = obstacleAABB(o, this.frame);
-      if (this.overlaps(p, b.minX, b.maxX, b.minY, b.maxY, b.minZ, b.maxZ)) { this.die(); break; }
+      let hit: boolean;
+      if (o.kind === 'spinner') {
+        hit = spinnerHit(o, this.frame, p, this.r);
+      } else {
+        const b = obstacleAABB(o, this.frame);
+        hit = this.overlaps(p, b.minX, b.maxX, b.minY, b.maxY, b.minZ, b.maxZ);
+      }
+      if (hit) { this.die(); break; }
     }
     // Placed traps — each is a skill-check: beat it and you pay nothing (and
     // score style); fail and it costs you AND credits the saboteur (exact).

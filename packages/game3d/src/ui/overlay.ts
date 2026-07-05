@@ -3,8 +3,10 @@ import {
   defaultConfig,
   type Course3D,
   type TrapType3D,
+  type TrapSlot3D,
 } from '@trampa/shared';
 import type { InputLog3D } from '@trampa/shared';
+import { CoursePreview3D } from '../game/coursePreview.js';
 import {
   api,
   type LeaderboardEntry,
@@ -45,6 +47,7 @@ function loadLocalGhost(
 export class Overlay {
   private root: HTMLDivElement;
   private card: HTMLDivElement;
+  private trapPreview: CoursePreview3D | null = null;
 
   constructor(private onStartRun: (data: GameData3D) => void) {
     injectStyles();
@@ -60,82 +63,100 @@ export class Overlay {
     this.root.classList.remove('hidden');
   }
   hide() {
+    this.disposeTrapPreview();
     this.root.classList.add('hidden');
+  }
+
+  /** Entry point: onboard (ask name once) the first time, else the menu. */
+  showStart() {
+    if (!getHandle()) this.showOnboarding();
+    else this.showMenu();
+  }
+
+  // ---------- ONBOARDING (first launch only) ----------
+  showOnboarding() {
+    this.show();
+    this.card.innerHTML = `
+      <div class="title">TRAMPA</div>
+      <div class="subtitle">corre · esquiva · sabotea</div>
+      <div class="space"></div>
+      <label>¿Cómo te llamas?</label>
+      <input id="handle" placeholder="tu nombre" maxlength="16" autofocus />
+      <button class="btn" id="go">Empezar ▶</button>
+      <div class="err" id="err"></div>
+    `;
+    const inp = this.$('#handle') as HTMLInputElement;
+    const go = () => {
+      const n = inp.value.trim();
+      if (!n) return this.err('Escribe un nombre.');
+      setHandle(n);
+      this.showMenu();
+    };
+    this.$('#go').addEventListener('click', go);
+    inp.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') go(); });
+    setTimeout(() => inp.focus(), 50);
   }
 
   // ---------- MENU ----------
   async showMenu() {
+    this.disposeTrapPreview();
     this.show();
-    const handle = getHandle();
     let leagueId = getLeagueId();
-    let leagueLine = '<p class="muted">Sin liga. Crea o únete a una.</p>';
+    let leagueLine = '';
     if (leagueId) {
       try {
         const l = await api.getLeague(leagueId);
-        leagueLine = `<div class="center"><div class="chip">🏆 ${l.name}</div>
-          <div class="streak">🔥 ${l.streakCount}</div>
-          <div class="muted">racha de liga · ${l.members.length} miembros</div></div>`;
+        leagueLine = `<div class="center" style="margin:8px 0 0"><span class="chip">🏆 ${escapeHtml(l.name)}</span>
+          <span class="streak" style="font-size:22px;vertical-align:middle">🔥 ${l.streakCount}</span></div>`;
       } catch (e: any) {
-        // A league that no longer exists (server was reset): drop it silently so
-        // the user can just create/join a new one instead of getting stuck.
-        if (isGone(e)) { setLeagueId(''); leagueId = null; }
-        else leagueLine = '<p class="muted">No se pudo cargar la liga (¿servidor apagado?).</p>';
+        if (isGone(e)) { setLeagueId(''); leagueId = null; } // dead league → drop silently
       }
     }
-
     const savedRoomId = localStorage.getItem('trampa.roomId');
     const roomBackBtn = savedRoomId
-      ? `<button class="btn secondary" id="roomBack">↩ Volver a mi sala</button>
-         <div class="desc">Sigue el torneo que ya tienes abierto.</div>`
-      : '';
+      ? '<button class="btn secondary" id="roomBack">↩ Volver a mi sala</button>' : '';
 
     this.card.innerHTML = `
       <div class="title">TRAMPA</div>
       <div class="subtitle">corre · esquiva · sabotea</div>
       ${leagueLine}
       <div class="space"></div>
-      <label>Tu nombre</label>
-      <input id="handle" placeholder="p.ej. rubén" value="${escapeAttr(handle)}" maxlength="16" />
-      <button class="btn" id="daily">▶ Circuito de hoy</button>
-      <div class="desc">El reto diario de tu liga. Corre, deja tu tiempo y una trampa.</div>
+      <button class="btn" id="league">🏆 Liga</button>
       <button class="btn secondary" id="global">🌍 Reto diario global</button>
-      <div class="desc">El mismo circuito para todo el mundo hoy. Comparte tu marca.</div>
-      <button class="btn secondary" id="rooms">📺 Salas (torneo)</button>
-      <div class="desc">Torneo de varios circuitos con podio. Para un directo o quedada.</div>
+      <button class="btn secondary" id="rooms">📺 Sala</button>
       ${roomBackBtn}
-      <button class="btn secondary" id="quick">🎮 Partida rápida (sin conexión)</button>
-      <div class="desc">Practica y corre contra tu propio fantasma.</div>
+      <button class="btn secondary" id="quick">🎮 Partida rápida</button>
       <div class="row">
-        <button class="btn ghost" id="league">🏆 Liga</button>
         <button class="btn ghost" id="store">🛍 Tienda</button>
+        <button class="btn ghost" id="settings">⚙️ Ajustes</button>
       </div>
-      <div class="desc center">Liga = tu grupo fijo con reto diario y racha. Sala = torneo puntual con podio.</div>
       <div class="err" id="err"></div>
     `;
-    const handleInput = this.$('#handle') as HTMLInputElement;
-    handleInput.addEventListener('change', () => setHandle(handleInput.value.trim()));
-
-    this.$('#daily').addEventListener('click', () => {
-      setHandle(handleInput.value.trim());
-      this.playDaily();
-    });
-    this.$('#global').addEventListener('click', () => {
-      setHandle(handleInput.value.trim());
-      this.playGlobal();
-    });
-    this.$('#rooms').addEventListener('click', () => {
-      setHandle(handleInput.value.trim());
-      this.showRooms();
-    });
-    this.$('#quick').addEventListener('click', () => {
-      setHandle(handleInput.value.trim());
-      this.playQuick();
-    });
-    if (savedRoomId) {
-      this.$('#roomBack').addEventListener('click', () => this.showRoom(savedRoomId));
-    }
     this.$('#league').addEventListener('click', () => this.showLeague());
+    this.$('#global').addEventListener('click', () => this.playGlobal());
+    this.$('#rooms').addEventListener('click', () => this.showRooms());
+    this.$('#quick').addEventListener('click', () => this.playQuick());
+    if (savedRoomId) this.$('#roomBack').addEventListener('click', () => this.showRoom(savedRoomId));
     this.$('#store').addEventListener('click', () => this.showStore());
+    this.$('#settings').addEventListener('click', () => this.showSettings());
+  }
+
+  // ---------- SETTINGS ----------
+  showSettings() {
+    this.show();
+    this.card.innerHTML = `
+      <h2>⚙️ Ajustes</h2>
+      <label>Tu nombre</label>
+      <input id="handle" value="${escapeAttr(getHandle())}" maxlength="16" />
+      <button class="btn" id="save">Guardar</button>
+      <div class="ok" id="okmsg"></div>
+      <button class="btn ghost" id="back">← Volver</button>
+    `;
+    this.$('#save').addEventListener('click', () => {
+      const n = (this.$('#handle') as HTMLInputElement).value.trim();
+      if (n) { setHandle(n); this.$('#okmsg').textContent = 'Guardado ✓'; }
+    });
+    this.$('#back').addEventListener('click', () => this.showMenu());
   }
 
   private async playDaily() {
@@ -362,78 +383,105 @@ export class Overlay {
           <option value="glue">🟢 Pegamento — frena… si no lo DASHea</option>
           <option value="bounce">🟡 Muelle — lo lanza y descoloca</option>
         </select>
-        ${renderTrapMap(course)}
-        <div class="muted center" id="trapHint">☝ Toca un punto verde para colocarla.</div>
+        <div id="trapPreview3d" style="min-height:200px;margin-top:8px"></div>
+        <div class="row" style="gap:8px;align-items:center;margin-top:8px">
+          <button class="btn ghost" id="trapPrev" style="flex:0 0 auto;padding:8px 14px">◀</button>
+          <div class="muted center" id="trapHint" style="flex:1;font-size:12px">Arrastra para girar · toca un pilar 💠 para colocar la trampa ahí</div>
+          <button class="btn ghost" id="trapNext" style="flex:0 0 auto;padding:8px 14px">▶</button>
+        </div>
         <div class="ok" id="trapMsg"></div>
       </div>
     `;
   }
 
+  private disposeTrapPreview() {
+    if (this.trapPreview) {
+      this.trapPreview.dispose();
+      this.trapPreview = null;
+    }
+  }
+
   private wireTrapSection(r: RunResult3D) {
-    const svg = this.card.querySelector('#trapmap');
-    if (!svg) return;
+    const host = this.card.querySelector('#trapPreview3d') as HTMLElement | null;
+    if (!host || !r.course.trapSlots.length || !r.courseId) return;
     const typeSel = this.$('#trapType') as HTMLSelectElement;
     const hint = this.card.querySelector('#trapHint') as HTMLElement | null;
+    const msg = this.$('#trapMsg');
     let placed = false;
-    const slotNodes = svg.querySelectorAll('[data-slot]');
-    slotNodes.forEach((node) => {
-      node.addEventListener('click', async () => {
-        if (placed) return; // one trap per run
-        const [sx, sz] = (node.getAttribute('data-slot') || '').split(',').map(parseFloatSafe);
-        const msg = this.$('#trapMsg');
-        try {
-          await api.placeTrap({
-            courseId: r.courseId!,
-            handle: getHandle(),
-            slotX: sx,
-            slotZ: sz,
-            trapType: typeSel.value as TrapType3D,
-          });
-          placed = true;
-          const label =
-            typeSel.options[typeSel.selectedIndex]?.text.split('—')[0].trim() || 'Trampa';
-          msg.textContent = `¡${label} colocada aquí! Tus colegas la van a sufrir 😈`;
-          if (hint) hint.textContent = 'Ya has puesto tu trampa de este circuito.';
-          // Highlight the chosen slot, dim the rest.
-          slotNodes.forEach((n) => {
-            const chosen = n === node;
-            (n as SVGCircleElement).setAttribute('fill', chosen ? '#ff2266' : '#2a3550');
-            (n as SVGCircleElement).setAttribute('r', chosen ? '11' : '6');
-          });
-        } catch (e: any) {
-          msg.className = 'err';
-          msg.textContent = `No se pudo: ${e.message}`;
-        }
-      });
+
+    this.disposeTrapPreview();
+    const preview = new CoursePreview3D(host, r.course, async (slot: TrapSlot3D) => {
+      if (placed) return; // one trap per run
+      try {
+        await api.placeTrap({
+          courseId: r.courseId!,
+          handle: getHandle(),
+          slotX: slot.x,
+          slotZ: slot.z,
+          trapType: typeSel.value as TrapType3D,
+        });
+        placed = true;
+        preview.select(slot);
+        preview.lock();
+        const label = typeSel.options[typeSel.selectedIndex]?.text.split('—')[0].trim() || 'Trampa';
+        msg.textContent = `¡${label} colocada aquí! Tus colegas la van a sufrir 😈`;
+        if (hint) hint.textContent = 'Ya has puesto tu trampa de este circuito.';
+      } catch (e: any) {
+        msg.className = 'err';
+        msg.textContent = `No se pudo: ${e.message}`;
+      }
     });
+    this.trapPreview = preview;
+
+    // ◀ ▶ jump the camera between the available trap zones.
+    const slots = r.course.trapSlots;
+    let idx = 0;
+    const go = (d: number) => {
+      idx = (idx + d + slots.length) % slots.length;
+      preview.focusSlot(slots[idx]);
+    };
+    this.card.querySelector('#trapPrev')?.addEventListener('click', () => go(-1));
+    this.card.querySelector('#trapNext')?.addEventListener('click', () => go(1));
   }
 
   // ---------- LEAGUE ----------
-  async showLeague(note?: string) {
+  async showLeague(note?: string): Promise<void> {
     this.show();
-    const handle = getHandle();
     const leagueId = getLeagueId();
-    let current = '';
+
+    // In a league → info + play today's circuit.
     if (leagueId) {
+      this.card.innerHTML = `<h2>🏆 Liga</h2><p class="muted">Cargando…</p>`;
       try {
         const l = await api.getLeague(leagueId);
-        current = `
-          <div class="chip">🏆 ${l.name}</div>
-          <div class="streak">🔥 ${l.streakCount}</div>
+        this.card.innerHTML = `
+          <h2>🏆 ${escapeHtml(l.name)}</h2>
+          ${note ? `<p class="ok">${escapeHtml(note)}</p>` : ''}
+          <div class="center"><span class="streak">🔥 ${l.streakCount}</span><div class="muted">racha de liga</div></div>
           <div class="members">${l.members.map((m) => `<span class="chip">${escapeHtml(m.handle)}</span>`).join('')}</div>
-          ${l.inviteCode ? `<p class="muted">Código de invitación: <b>${l.inviteCode}</b></p>` : ''}
-          <hr style="border-color:#22304e"/>`;
-      } catch {
-        current = '<p class="muted">No se pudo cargar la liga actual.</p>';
+          ${l.inviteCode ? `<p class="muted center">Código: <b>${l.inviteCode}</b></p>` : ''}
+          <div class="space"></div>
+          <button class="btn" id="play">▶ Circuito de hoy</button>
+          <button class="btn ghost" id="leave">Salir de la liga</button>
+          <button class="btn ghost" id="back">← Volver</button>
+          <div class="err" id="err"></div>
+        `;
+        this.$('#play').addEventListener('click', () => this.playDaily());
+        this.$('#leave').addEventListener('click', () => { setLeagueId(''); this.showLeague(); });
+        this.$('#back').addEventListener('click', () => this.showMenu());
+      } catch (e: any) {
+        if (isGone(e)) { setLeagueId(''); return this.showLeague('Esa liga ya no existe. Crea o únete a una nueva.'); }
+        this.card.innerHTML = `<h2>🏆 Liga</h2><p class="err">No se pudo cargar la liga.</p>
+          <button class="btn ghost" id="back">← Volver</button>`;
+        this.$('#back').addEventListener('click', () => this.showMenu());
       }
+      return;
     }
+
+    // Not in a league → create / join (uses your saved name).
     this.card.innerHTML = `
-      <h2>Liga</h2>
+      <h2>🏆 Liga</h2>
       ${note ? `<p class="ok">${escapeHtml(note)}</p>` : ''}
-      ${current}
-      <label>Tu nombre</label>
-      <input id="handle" value="${escapeAttr(handle)}" maxlength="16" placeholder="tu nombre" />
-      <div class="space"></div>
       <label>Crear una liga nueva</label>
       <input id="newName" placeholder="nombre de la liga" maxlength="24" />
       <button class="btn" id="create">Crear liga</button>
@@ -444,33 +492,26 @@ export class Overlay {
       <button class="btn ghost" id="back">← Volver</button>
       <div class="err" id="err"></div>
     `;
-    const h = this.$('#handle') as HTMLInputElement;
     this.$('#create').addEventListener('click', async () => {
       const name = (this.$('#newName') as HTMLInputElement).value.trim();
-      const nm = h.value.trim();
-      if (!nm) return this.err('Pon tu nombre.');
       if (!name) return this.err('Pon un nombre de liga.');
-      setHandle(nm);
       try {
-        const res = await api.createLeague(name, nm);
+        const res = await api.createLeague(name, getHandle());
         setLeagueId(res.id);
         setUserId(res.userId);
-        this.showLeague(`Liga creada. Comparte el código: ${res.inviteCode}`);
+        this.showLeague(`Liga creada. Código: ${res.inviteCode}`);
       } catch (e: any) {
         this.err(e.message);
       }
     });
     this.$('#join').addEventListener('click', async () => {
       const code = (this.$('#code') as HTMLInputElement).value.trim().toUpperCase();
-      const nm = h.value.trim();
-      if (!nm) return this.err('Pon tu nombre.');
       if (!code) return this.err('Pon el código.');
-      setHandle(nm);
       try {
-        const res = await api.joinLeague(code, nm);
+        const res = await api.joinLeague(code, getHandle());
         setLeagueId(res.id);
         if ((res as any).userId) setUserId((res as any).userId);
-        this.showLeague('¡Dentro! A correr el diario.');
+        this.showLeague('¡Dentro!');
       } catch (e: any) {
         this.err(e.message);
       }
@@ -481,14 +522,9 @@ export class Overlay {
   // ---------- ROOMS ----------
   async showRooms(note?: string) {
     this.show();
-    const handle = getHandle();
     this.card.innerHTML = `
-      <h2>📺 Salas</h2>
+      <h2>📺 Sala</h2>
       ${note ? `<p class="ok">${escapeHtml(note)}</p>` : ''}
-      <p class="muted">Crea una sala y comparte el código, o únete a una existente.</p>
-      <label>Tu nombre</label>
-      <input id="handle" value="${escapeAttr(handle)}" maxlength="16" placeholder="tu nombre" />
-      <div class="space"></div>
       <label>Crear una sala nueva</label>
       <input id="roomName" placeholder="nombre de la sala" maxlength="24" />
       <label>Número de circuitos</label>
@@ -505,16 +541,12 @@ export class Overlay {
       <button class="btn ghost" id="back">← Volver</button>
       <div class="err" id="err"></div>
     `;
-    const h = this.$('#handle') as HTMLInputElement;
     this.$('#create').addEventListener('click', async () => {
       const name = (this.$('#roomName') as HTMLInputElement).value.trim();
-      const nm = h.value.trim();
       const numCourses = Number((this.$('#numCourses') as HTMLSelectElement).value);
-      if (!nm) return this.err('Pon tu nombre.');
       if (!name) return this.err('Pon un nombre de sala.');
-      setHandle(nm);
       try {
-        const res = await api.createRoom(name, nm, numCourses);
+        const res = await api.createRoom(name, getHandle(), numCourses);
         setUserId(res.userId);
         localStorage.setItem('trampa.roomId', res.id);
         this.showRoom(res.id);
@@ -524,12 +556,9 @@ export class Overlay {
     });
     this.$('#join').addEventListener('click', async () => {
       const code = (this.$('#code') as HTMLInputElement).value.trim().toUpperCase();
-      const nm = h.value.trim();
-      if (!nm) return this.err('Pon tu nombre.');
       if (!code) return this.err('Pon el código.');
-      setHandle(nm);
       try {
-        const res = await api.joinRoom(code, nm);
+        const res = await api.joinRoom(code, getHandle());
         setUserId(res.userId);
         localStorage.setItem('trampa.roomId', res.id);
         this.showRoom(res.id);
@@ -541,6 +570,7 @@ export class Overlay {
   }
 
   async showRoom(roomId: string) {
+    this.disposeTrapPreview();
     this.show();
     this.loading('Cargando sala…');
     let room: RoomState;
@@ -739,39 +769,6 @@ function renderPodium(podium: RoomStanding[]): string {
     )
     .join('');
   return `<h2>🏆 Podio</h2><div class="podium">${rows}</div>`;
-}
-
-/**
- * Top-down minimap of the 3D course for placing traps. Forward (Z) maps to the
- * VERTICAL axis (top = far / finish), lateral (X) maps to the HORIZONTAL axis.
- * Each trap slot is a clickable circle carrying its absolute course coords.
- */
-function renderTrapMap(course: Course3D): string {
-  const W = 400;
-  const H = 300;
-  const pad = 26;
-  const halfW = course.halfWidth > 0 ? course.halfWidth : 6;
-  const zSpan = course.finishZ - course.startZ || 1;
-  // X (-halfW..halfW) -> horizontal; Z (start..finish) -> vertical, far at top.
-  const mapX = (x: number) => pad + ((x + halfW) / (2 * halfW)) * (W - 2 * pad);
-  const mapY = (z: number) => pad + (1 - (z - course.startZ) / zSpan) * (H - 2 * pad);
-  const track = `<rect x="${(pad - 6).toFixed(1)}" y="${(pad - 6).toFixed(1)}" width="${(W - 2 * pad + 12).toFixed(1)}" height="${(H - 2 * pad + 12).toFixed(1)}" rx="10" fill="#16233c"/>`;
-  const finishLine = `<line x1="${pad}" y1="${pad}" x2="${W - pad}" y2="${pad}" stroke="#38e1ff" stroke-width="2.5" stroke-dasharray="7 5"/>`;
-  const startLine = `<line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="#4a5a80" stroke-width="2" stroke-dasharray="4 4"/>`;
-  const metaLabel = `<text x="${W / 2}" y="15" text-anchor="middle" fill="#38e1ff" font-size="12" font-weight="700" font-family="system-ui,sans-serif">META ▲</text>`;
-  const salidaLabel = `<text x="${W / 2}" y="${H - 8}" text-anchor="middle" fill="#8093b5" font-size="11" font-family="system-ui,sans-serif">SALIDA</text>`;
-  const slots = course.trapSlots
-    .map(
-      (s) =>
-        `<circle data-slot="${s.x},${s.z}" cx="${mapX(s.x).toFixed(1)}" cy="${mapY(s.z).toFixed(1)}" r="9" fill="#22ffcc" stroke="#04121f" stroke-width="1.5" style="cursor:pointer"><title>Colocar trampa aquí</title></circle>`,
-    )
-    .join('');
-  return `<svg id="trapmap" class="trapmap" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${track}${finishLine}${startLine}${metaLabel}${salidaLabel}${slots}</svg>`;
-}
-
-function parseFloatSafe(s: string): number {
-  const n = parseFloat(s);
-  return Number.isFinite(n) ? n : 0;
 }
 
 /** True if an API error means the referenced thing no longer exists. */

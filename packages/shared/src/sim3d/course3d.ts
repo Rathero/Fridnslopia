@@ -19,7 +19,13 @@ export interface Box {
 }
 
 export interface Obstacle extends Box {
-  kind: 'wall' | 'mover' | 'trap';
+  /**
+   * `wall` static kill; `mover` sweeps laterally (amp/period/phase);
+   * `crusher` a piston that slams down periodically (lethal only while down);
+   * `spinner` a bar rotating in the ground plane about (x,z) (arm half-length in `amp`);
+   * `trap` a player-placed skill-check.
+   */
+  kind: 'wall' | 'mover' | 'trap' | 'crusher' | 'spinner';
   amp?: number;
   period?: number;
   phase?: number;
@@ -73,7 +79,7 @@ const FLOOR_H = 1.2;
 
 interface ChunkFloor { z0: number; z1: number; x?: number; w?: number; top?: number }
 interface ChunkObs {
-  kind: 'wall' | 'mover';
+  kind: 'wall' | 'mover' | 'crusher' | 'spinner';
   x: number; z: number; y?: number; w?: number; h?: number; d?: number;
   amp?: number; period?: number; phase?: number;
 }
@@ -93,6 +99,16 @@ const beam = (z0: number, z1: number, w: number, x = 0, top = 0): ChunkFloor => 
 const wall = (x: number, z: number, w = 3.4): ChunkObs => ({ kind: 'wall', x, z, y: 1.1, w, h: 2.2, d: 1.1 });
 const gate = (x: number, z: number, amp: number, period: number, phase: number, w = 4.0): ChunkObs =>
   ({ kind: 'mover', x, z, y: 1.1, w, h: 2.2, d: 1.2, amp, period, phase });
+// A piston that rests up (safe) and slams down for half its cycle — lethal only
+// while down. Partial width so a lane beside it is always open (autopilot-safe);
+// a human can time the shortcut straight through. `amp` = slam depth.
+const crusher = (x: number, z: number, period = 84, phase = 0, w = 1.8): ChunkObs =>
+  ({ kind: 'crusher', x, z, y: 2.7, w, h: 2.2, d: 1.5, amp: 2.2, period, phase });
+// A bar rotating in the ground plane about (x,z). `amp` = arm half-length, so the
+// swept disc is [x-amp, x+amp]; keep amp small enough that the outer lanes stay
+// clear (autopilot rounds the disc; humans weave through the sweeping gaps).
+const spinner = (x: number, z: number, period = 150, phase = 0, len = 4.6): ChunkObs =>
+  ({ kind: 'spinner', x, z, y: 1.05, w: len, h: 1.7, d: 0.7, amp: len / 2, period, phase });
 
 const CHUNKS: Chunk[] = [
   { id: 'start_run', len: 16, difficulty: 0, tags: ['start', 'flat'], floors: [fl(0, 16)] },
@@ -131,6 +147,38 @@ const CHUNKS: Chunk[] = [
     obstacles: [gate(0, 13, 2.8, 98, 0)] },
   { id: 'kerb_weave', len: 18, difficulty: 3, tags: ['step', 'weave'], floors: [fl(0, 4), fl(4, 14, 0.4), fl(14, 18)],
     obstacles: [wall(3.1, 8), wall(-3.1, 11.5)], trapSlots: [{ x: 0, z: 6 }] },
+  // --- Verticality (changing heights, Fall-Guys style). Up-steps are small
+  // (≤0.4, the ball rolls over); drops are free; every chunk starts & ends at
+  // top 0 so seams connect and the autopilot stays completable. ---
+  { id: 'ascend_descend', len: 20, difficulty: 2, tags: ['ramp', 'step', 'height'], floors: [
+    fl(0, 3), fl(3, 5, 0.35), fl(5, 7, 0.7), fl(7, 11, 1.0), fl(11, 13, 0.7), fl(13, 15, 0.35), fl(15, 20)] },
+  { id: 'stepped_mesa', len: 22, difficulty: 2, tags: ['ramp', 'step', 'height'], floors: [
+    fl(0, 3), fl(3, 5, 0.35), fl(5, 7, 0.7), fl(7, 14, 1.05), fl(14, 16, 0.7), fl(16, 18, 0.35), fl(18, 22)],
+    trapSlots: [{ x: 0, z: 10 }] },
+  { id: 'undulate', len: 20, difficulty: 3, tags: ['ramp', 'step', 'height'], floors: [
+    fl(0, 2), fl(2, 4, 0.35), fl(4, 6), fl(6, 8, 0.35), fl(8, 10), fl(10, 12, 0.35), fl(12, 14), fl(14, 16, 0.35), fl(16, 20)] },
+  { id: 'sunken_dip', len: 18, difficulty: 2, tags: ['step', 'height'], floors: [
+    fl(0, 4), fl(4, 6, -0.35), fl(6, 12, -0.7), fl(12, 14, -0.35), fl(14, 18)],
+    trapSlots: [{ x: 0, z: 9 }] },
+  { id: 'ramp_gap_ramp', len: 22, difficulty: 4, tags: ['ramp', 'gap', 'jump', 'height', 'hard'], floors: [
+    fl(0, 3), fl(3, 5, 0.35), fl(5, 8, 0.7), fl(12, 15, 0.7), fl(15, 17, 0.35), fl(17, 22)] },
+  { id: 'plateau_weave', len: 22, difficulty: 3, tags: ['ramp', 'weave', 'height'], floors: [
+    fl(0, 3), fl(3, 5, 0.35), fl(5, 16, 0.7), fl(16, 18, 0.35), fl(18, 22)],
+    obstacles: [wall(3.1, 8), wall(-3.1, 12)] },
+
+  // --- Fall-Guys moving hazards. Every one leaves a guaranteed clear lane
+  // (partial-width pistons / centre spinners with clear outer lanes) so the
+  // autopilot stays completable, while humans get a risky timed shortcut. ---
+  { id: 'spinner_gate', len: 18, difficulty: 3, tags: ['spinner', 'dodge'], floors: [fl(0, 18)],
+    obstacles: [spinner(0, 9, 150, 0)] },
+  { id: 'twin_spinners', len: 26, difficulty: 4, tags: ['spinner', 'dodge', 'hard'], floors: [fl(0, 26)],
+    obstacles: [spinner(0, 8, 140, 0), spinner(0, 17, 140, 70)] },
+  { id: 'piston_row', len: 18, difficulty: 3, tags: ['crusher', 'dodge'], floors: [fl(0, 18)],
+    obstacles: [crusher(-2.4, 7, 84, 0), crusher(2.4, 7, 84, 42), crusher(0, 13, 84, 20)] },
+  { id: 'piston_gauntlet', len: 24, difficulty: 4, tags: ['crusher', 'dodge', 'hard'], floors: [fl(0, 24)],
+    obstacles: [crusher(-2.4, 7, 82, 0), crusher(2.4, 13, 82, 40), crusher(0, 19, 82, 16)] },
+  { id: 'spin_and_smash', len: 26, difficulty: 4, tags: ['spinner', 'crusher', 'dodge', 'hard'], floors: [fl(0, 26)],
+    obstacles: [spinner(0, 8, 150, 0), crusher(-2.4, 17, 84, 0), crusher(2.4, 17, 84, 42)] },
 ];
 
 const START = CHUNKS.find((c) => c.id === 'start_run')!;

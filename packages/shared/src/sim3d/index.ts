@@ -5,6 +5,8 @@ export {
   applyModifier3D,
   initRapier3D,
   obstacleAABB,
+  spinnerAngle,
+  spinnerHit,
   FIXED_DT as FIXED_DT_3D,
 } from './sim3d.js';
 export type { Params3D, Input3D, PlayerState3D } from './sim3d.js';

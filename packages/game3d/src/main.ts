@@ -59,7 +59,7 @@ async function boot() {
   await Promise.all([initRapier3D(), loadCharacterModels(), loadProps()]);
   requestAnimationFrame(loop);
   if (AUTOPLAY) overlay.startDemo();
-  else overlay.showMenu();
+  else overlay.showStart();
 }
 
 function startRun(d: GameData3D) {

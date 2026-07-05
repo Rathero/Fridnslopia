@@ -4,7 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { Course3D, PlacedTrap3D } from '@trampa/shared';
-import { obstacleAABB } from '@trampa/shared';
+import { obstacleAABB, spinnerAngle } from '@trampa/shared';
 import { makeRunner, type Runner } from './game/runners.js';
 import { propsForBiome, cloneProp, hasProps } from './game/propLoader.js';
 import { SKINS, equippedSkin, type Skin } from './cosmetics.js';
@@ -27,6 +27,8 @@ export class Renderer3D {
   private playerLight: THREE.PointLight;
   private contact: THREE.Mesh;
   private movers: { mesh: THREE.Mesh; edge: THREE.LineSegments; baseX: number; o: any }[] = [];
+  private crushers: { group: THREE.Group; mesh: THREE.Mesh; baseY: number; o: any }[] = [];
+  private spinners: { pivot: THREE.Group; bar: THREE.Mesh; o: any }[] = [];
   private sun: THREE.DirectionalLight;
   private sky: THREE.Mesh;
   private trail: THREE.Mesh[] = [];
@@ -64,7 +66,7 @@ export class Renderer3D {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.18;
+    this.renderer.toneMappingExposure = 0.98; // calmer, less blown-out
     container.appendChild(this.renderer.domElement);
 
     this.scene.background = new THREE.Color(pal.fog);
@@ -175,14 +177,15 @@ export class Renderer3D {
     );
     this.fxFlash = this.makeOverlay('radial-gradient(ellipse at center, rgba(255,40,60,0.55) 0%, rgba(255,0,30,0.85) 120%)');
 
-    // Post-processing: bloom makes the emissive neon actually glow.
+    // Post-processing: a restrained bloom — only the brightest accents glow, so
+    // the scene isn't a wash of light (was far too bright).
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.75, // strength
-      0.6, // radius
-      0.72, // threshold — only bright/emissive pixels bloom
+      0.32, // strength (was 0.75)
+      0.5, // radius
+      0.85, // threshold — only clearly bright pixels bloom (was 0.72)
     );
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -252,7 +255,7 @@ export class Renderer3D {
   // --- construction helpers -------------------------------------------------
 
   private buildSky(pal: Course3D['palette']): THREE.Mesh {
-    const top = new THREE.Color(pal.fog).lerp(new THREE.Color(pal.accent), 0.14).multiplyScalar(1.35);
+    const top = new THREE.Color(pal.fog).lerp(new THREE.Color(pal.accent), 0.11).multiplyScalar(1.12);
     const bottom = new THREE.Color(pal.fog);
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
@@ -313,20 +316,13 @@ export class Renderer3D {
       this.scene.add(mesh);
 
       const topY = f.y + f.h / 2;
-      // Glowing leading edge for readability.
-      const edge = new THREE.Mesh(
-        new THREE.BoxGeometry(f.w, 0.12, 0.35),
-        this.mat(pal.accent, pal.accent, 1.0),
-      );
-      edge.position.set(f.x, topY + 0.06, f.z - f.d / 2 + 0.2);
-      this.scene.add(edge);
-
-      // Faint centre lane marking for depth readability (only on wide slabs).
+      // Faint centre lane markings for depth readability (only on wide slabs).
+      // (The old glowing leading-edge bars were removed — far too dazzling.)
       if (f.w > 6 && f.d > 3) {
         const laneMat = new THREE.MeshBasicMaterial({
           color: pal.accent,
           transparent: true,
-          opacity: 0.06,
+          opacity: 0.05,
           depthWrite: false,
         });
         for (const lx of [-2.5, 2.5]) {
@@ -342,6 +338,9 @@ export class Renderer3D {
   private buildObstacles() {
     const pal = this.course.palette;
     for (const o of this.course.obstacles) {
+      if (o.kind === 'crusher') { this.buildCrusher(o); continue; }
+      if (o.kind === 'spinner') { this.buildSpinner(o); continue; }
+
       const geo = new THREE.BoxGeometry(o.w, o.h, o.d);
       const mesh = new THREE.Mesh(geo, this.mat(pal.obstacle, pal.obstacle, 0.55, 0.55, 0.2));
       mesh.position.set(o.x, o.y, o.z);
@@ -359,6 +358,84 @@ export class Renderer3D {
 
       if (o.kind === 'mover') this.movers.push({ mesh, edge, baseX: o.x, o });
     }
+  }
+
+  /** A piston: a heavy head that slams down + a slim guide shaft above it, plus a
+   *  danger shadow on the floor so you can read where it lands. */
+  private buildCrusher(o: any) {
+    const pal = this.course.palette;
+    const group = new THREE.Group();
+
+    const head = new THREE.Mesh(
+      new THREE.BoxGeometry(o.w, o.h, o.d),
+      this.mat(pal.obstacle, pal.obstacle, 0.5, 0.5, 0.35),
+    );
+    head.castShadow = true;
+    head.receiveShadow = true;
+    group.add(head);
+    group.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(head.geometry),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }),
+    ));
+    group.position.set(o.x, o.y, o.z);
+    this.scene.add(group);
+
+    // Fixed guide shaft rising above (visually anchors the piston).
+    const shaft = new THREE.Mesh(
+      new THREE.BoxGeometry(o.w * 0.35, 4.5, o.d * 0.35),
+      this.mat(0x222a3a, pal.obstacle, 0.15, 0.6, 0.4),
+    );
+    shaft.position.set(o.x, o.y + 3.4, o.z);
+    this.scene.add(shaft);
+
+    // Danger footprint on the ground.
+    const foot = new THREE.Mesh(
+      new THREE.PlaneGeometry(o.w, o.d),
+      new THREE.MeshBasicMaterial({ color: pal.obstacle, transparent: true, opacity: 0.28, depthWrite: false }),
+    );
+    foot.rotation.x = -Math.PI / 2;
+    foot.position.set(o.x, 0.04, o.z);
+    this.scene.add(foot);
+
+    this.crushers.push({ group, mesh: head, baseY: o.y, o });
+  }
+
+  /** A bar spinning in the ground plane about its pivot (Fall-Guys "whirligig"). */
+  private buildSpinner(o: any) {
+    const pal = this.course.palette;
+    const pivot = new THREE.Group();
+    pivot.position.set(o.x, o.y, o.z);
+
+    const L = o.amp ?? o.w / 2;
+    const bar = new THREE.Mesh(
+      new THREE.BoxGeometry(L * 2, o.h, o.d),
+      this.mat(pal.obstacle, pal.obstacle, 0.6, 0.5, 0.3),
+    );
+    bar.castShadow = true;
+    pivot.add(bar);
+    pivot.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(bar.geometry),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }),
+    ));
+
+    // A bright hub at the pivot.
+    const hub = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.35, o.h + 0.3, 16),
+      this.mat(0xffffff, pal.accent, 0.9, 0.3, 0.4),
+    );
+    pivot.add(hub);
+
+    // Swept-disc footprint on the ground so the danger radius reads clearly.
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(L - 0.15, L, 40),
+      new THREE.MeshBasicMaterial({ color: pal.accent, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(o.x, 0.05, o.z);
+    this.scene.add(ring);
+
+    this.scene.add(pivot);
+    this.spinners.push({ pivot, bar, o });
   }
 
   private buildFinish() {
@@ -418,6 +495,20 @@ export class Renderer3D {
         edgeMat.opacity = 0.4 + vel * 0.55;
         edgeMat.color.setRGB(1, 1 - vel * 0.75, 1 - vel * 0.75);
       }
+    }
+    // Crushers: drop the head via the same dy the sim uses; flare red as it slams.
+    for (const c of this.crushers) {
+      const b = obstacleAABB(c.o, frame);
+      const y = (b.minY + b.maxY) / 2;
+      c.group.position.y = y;
+      const down = Math.max(0, (c.baseY - y) / (c.o.amp || 1)); // 0 up … 1 fully slammed
+      const em = c.mesh.material as THREE.MeshStandardMaterial;
+      em.emissiveIntensity = 0.3 + down * 0.85;
+      em.emissive.setRGB(1, 0.5 - down * 0.35, 0.42 - down * 0.32); // warm when up → deep red slammed
+    }
+    // Spinners: rotate the bar to match the sim's arm angle exactly.
+    for (const s of this.spinners) {
+      s.pivot.rotation.y = -spinnerAngle(s.o, frame);
     }
     // Gentle pulse on the finish so it feels alive.
     this.clock += 1;
