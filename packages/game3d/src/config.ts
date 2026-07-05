@@ -4,6 +4,13 @@ import { PIXELS_PER_METRE } from '@trampa/shared';
 export const API_URL =
   (import.meta.env && import.meta.env.VITE_API_URL) || 'http://localhost:8787';
 
+/** Supabase project (Realtime, for live multiplayer). The publishable key is
+ *  public by design — safe to ship in the client. */
+export const SUPABASE_URL =
+  (import.meta.env && import.meta.env.VITE_SUPABASE_URL) || 'https://bncuwqwvxafhthlymxyd.supabase.co';
+export const SUPABASE_ANON_KEY =
+  (import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) || 'sb_publishable_D_CPNl7r9KgE_c-qM0uGTA_rXM6nf1v';
+
 /** Render scale: metres -> pixels. Sim stays in metres; only rendering scales. */
 export const PPM = PIXELS_PER_METRE;
 

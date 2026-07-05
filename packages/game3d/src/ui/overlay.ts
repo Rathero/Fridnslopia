@@ -7,6 +7,7 @@ import {
 } from '@trampa/shared';
 import type { InputLog3D } from '@trampa/shared';
 import { CoursePreview3D } from '../game/coursePreview.js';
+import { LiveHeat, type HeatStart } from '../net/live.js';
 import {
   api,
   type LeaderboardEntry,
@@ -48,6 +49,7 @@ export class Overlay {
   private root: HTMLDivElement;
   private card: HTMLDivElement;
   private trapPreview: CoursePreview3D | null = null;
+  private liveHeat: LiveHeat | null = null;
 
   constructor(private onStartRun: (data: GameData3D) => void) {
     injectStyles();
@@ -100,6 +102,7 @@ export class Overlay {
   // ---------- MENU ----------
   async showMenu() {
     this.disposeTrapPreview();
+    this.leaveLiveHeat();
     this.show();
     let leagueId = getLeagueId();
     let leagueLine = '';
@@ -601,7 +604,8 @@ export class Overlay {
       <div class="space"></div>
       ${finished && room.podium.length ? renderPodium(room.podium) : ''}
       ${renderStandings(room.standings, getHandle())}
-      ${finished ? '' : `<h2>Circuitos</h2><div class="circuits">${circuits}</div>`}
+      ${finished ? '' : `<button class="btn" id="live">🏁 Carrera EN VIVO <span class="muted" style="font-size:11px">(beta)</span></button>`}
+      ${finished ? '' : `<h2>Circuitos (contrarreloj)</h2><div class="circuits">${circuits}</div>`}
       ${isHost && !finished ? '<button class="btn secondary" id="finish">🏁 Finalizar torneo</button>' : ''}
       <button class="btn ghost" id="back">← Volver</button>
       <div class="err" id="err"></div>
@@ -614,6 +618,7 @@ export class Overlay {
           this.playRoomCourse(roomId, idx, room.numCourses);
         }),
       );
+      this.$('#live').addEventListener('click', () => this.showLiveLobby(room));
     }
 
     if (isHost && !finished) {
@@ -638,6 +643,93 @@ export class Overlay {
     }
 
     this.$('#back').addEventListener('click', () => this.showMenu());
+  }
+
+  // ---------- LIVE MULTIPLAYER (MVP) ----------
+  private leaveLiveHeat() {
+    if (this.liveHeat) { this.liveHeat.leave(); this.liveHeat = null; }
+  }
+
+  /** A waiting room for a synchronized live race; the host fires the start. */
+  private async showLiveLobby(room: RoomState) {
+    this.show();
+    const userId = getUserId();
+    const handle = getHandle();
+    if (!userId || !handle) return this.err('Necesitas tu nombre y estar en la sala.');
+    this.leaveLiveHeat();
+    const heat = new LiveHeat(room.id, { userId, handle });
+    this.liveHeat = heat;
+    const isHost = room.hostId === userId;
+
+    this.card.innerHTML = `
+      <h2>🏁 Carrera en vivo</h2>
+      <p class="muted center">Todos corréis el <b>mismo circuito a la vez</b> y os veis en directo. Las trampas siguen fastidiando 😈. El anfitrión da la salida.</p>
+      <div class="muted center">Circuito 1 · sala <b>${escapeHtml(room.code)}</b></div>
+      <div class="space"></div>
+      <label>Sala de espera</label>
+      <div class="members" id="roster"><span class="chip">${escapeHtml(handle)} (tú)</span></div>
+      <div class="space"></div>
+      <div id="lobbyAction"><p class="muted center">Conectando…</p></div>
+      <button class="btn ghost" id="back">← Salir</button>
+      <div class="err" id="err"></div>
+    `;
+    this.$('#back').addEventListener('click', () => { this.leaveLiveHeat(); this.showRoom(room.id); });
+
+    heat.onRoster = (members) => {
+      const el = this.card.querySelector('#roster');
+      if (!el) return;
+      const list = members.length ? members : [{ userId, handle }];
+      el.innerHTML = list
+        .map((m) => `<span class="chip">${escapeHtml(m.handle)}${m.userId === userId ? ' (tú)' : ''}</span>`)
+        .join('');
+    };
+    heat.onStart = (s) => this.beginLiveRun(room, s, heat);
+
+    try {
+      await heat.join();
+    } catch (e: any) {
+      if (this.liveHeat === heat) this.err(e.message || 'No se pudo conectar al modo en vivo.');
+      return;
+    }
+    if (this.liveHeat !== heat) return; // navigated away while connecting
+    const action = this.card.querySelector('#lobbyAction');
+    if (!action) return;
+    if (isHost) {
+      action.innerHTML = `<button class="btn" id="go">▶ ¡DAR LA SALIDA!</button>`;
+      this.$('#go').addEventListener('click', () => {
+        (this.$('#go') as HTMLButtonElement).disabled = true;
+        const s = heat.start(0);
+        this.beginLiveRun(room, s, heat); // host starts locally (broadcast self:false)
+      });
+    } else {
+      action.innerHTML = `<p class="muted center">⏳ Esperando a que el anfitrión dé la salida…</p>`;
+    }
+  }
+
+  private async beginLiveRun(room: RoomState, start: HeatStart, heat: LiveHeat) {
+    if (this.liveHeat !== heat) return; // already started / left
+    heat.onStart = undefined; // one start only
+    try {
+      this.loading('Preparando la carrera…');
+      const rc = await api.roomCourse(room.id, start.courseIdx);
+      this.liveHeat = null; // ownership passes to the engine for the run
+      this.startRun({
+        course: rc.course,
+        courseId: rc.courseId,
+        placedTraps: rc.traps,
+        ghosts: [],
+        online: true,
+        mode: 'room',
+        roomId: room.id,
+        roomIdx: start.courseIdx,
+        numCourses: room.numCourses,
+        live: heat,
+        liveStartAtMs: start.startAtMs,
+      });
+    } catch (e: any) {
+      heat.leave();
+      this.showRoom(room.id).then(() => this.err(`No se pudo empezar la carrera: ${e.message}`));
+    }
   }
 
   private async playRoomCourse(roomId: string, idx: number, numCourses: number) {

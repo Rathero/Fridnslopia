@@ -1,4 +1,5 @@
 import type { Course3D, PlacedTrap3D, InputLog3D, SimFrame3D } from '@trampa/shared';
+import type { LiveHeat } from './net/live.js';
 
 export interface PreparedGhost3D {
   handle: string;
@@ -20,6 +21,9 @@ export interface GameData3D {
   numCourses?: number;
   shareable?: boolean;
   autoplay?: boolean;
+  /** Live multiplayer heat (MVP): stream my position + see rivals live. */
+  live?: LiveHeat;
+  liveStartAtMs?: number;
 }
 
 /** What the engine emits when a run ends. */

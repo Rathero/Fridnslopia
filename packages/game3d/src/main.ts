@@ -11,6 +11,7 @@ import { Overlay } from './ui/overlay.js';
 import { loadCharacterModels } from './game/modelLoader.js';
 import { loadProps } from './game/propLoader.js';
 import type { GameData3D, RunResult3D, PreparedGhost3D } from './types.js';
+import type { LivePos } from './net/live.js';
 
 const app = document.getElementById('app')!;
 const timeEl = document.getElementById('time')!;
@@ -53,6 +54,9 @@ let lastSteerSent = 0;                // last steer recorded into the log
 let leftHeld = false, rightHeld = false, shiftHeld = false;
 let events: { f: number; t: Input3D }[] = [];
 let autoEvents: Map<number, Input3D[]> | null = null;
+// Live multiplayer: latest position of each rival, and a broadcast throttle.
+const liveOthers = new Map<string, LivePos>();
+let liveSendFrame = 0;
 
 const overlay = new Overlay((d: GameData3D) => startRun(d));
 
@@ -74,7 +78,17 @@ function startRun(d: GameData3D) {
   renderer = new Renderer3D(app, d.course, d.placedTraps);
   // Fastest friend's ghost drives the live delta readout.
   bestGhost = d.ghosts.length ? d.ghosts.reduce((a, b) => (b.timeMs < a.timeMs ? b : a)) : null;
-  newAttempt(COUNTDOWN_MS);
+
+  // Live multiplayer: track rivals' streamed positions.
+  liveOthers.clear();
+  if (d.live) {
+    d.live.onPos = (p) => liveOthers.set(p.userId, p);
+    d.live.onFinish = (p) => { const o = liveOthers.get(p.userId); if (o) { o.finished = true; o.timeMs = p.timeMs; } };
+  }
+
+  // First attempt: sync the countdown to the host's start time; otherwise normal.
+  const cd = d.live && d.liveStartAtMs ? Math.max(800, d.liveStartAtMs - Date.now()) : COUNTDOWN_MS;
+  newAttempt(cd);
 }
 
 /** Crash/fall = terminal death → restart the WHOLE level from the start. */
@@ -107,6 +121,7 @@ function newAttempt(countdown: number) {
   events = [];
   autoEvents = null;
   bestCursor = 0;
+  liveSendFrame = 0;
 
   subEl.textContent = `TRAMPA 3D · ${data.course.theme}`;
   if (hint) hint.style.display = '';
@@ -133,6 +148,7 @@ function newAttempt(countdown: number) {
 function exitRun() {
   if (!running && !sim) return;
   running = false;
+  if (data?.live) { data.live.leave(); data.live = undefined; }
   if (renderer) { renderer.dispose(); renderer = null; }
   if (sim) { sim.free(); sim = null; }
   stickEl.style.opacity = '0';
@@ -150,6 +166,12 @@ function exitRun() {
 function finish() {
   if (!sim || !data) return;
   running = false;
+  // Live multiplayer: announce my finish, then leave the heat channel.
+  if (data.live) {
+    data.live.finish({ z: sim.getPlayer().z, timeMs: sim.timeMs(), finished: sim.finished });
+    data.live.leave();
+    data.live = undefined;
+  }
   const result: RunResult3D = {
     course: data.course,
     courseId: data.courseId,
@@ -246,6 +268,13 @@ addEventListener('keydown', (e) => { if (e.code === 'Escape' && running) exitRun
 // ---- HUD helpers ----
 function renderGhosts(f: number) {
   if (!renderer || !data) return;
+  if (data.live) {
+    // Live rivals: their latest streamed positions (up to the 5-ghost pool).
+    const others = [...liveOthers.values()].slice(0, 5).map((o) => ({ x: o.x, y: o.y, z: o.z }));
+    while (others.length < 5) others.push(null as any);
+    renderer.setGhosts(others);
+    return;
+  }
   renderer.setGhosts(
     data.ghosts.map((g) => {
       const fr = g.frames[Math.min(f, g.frames.length - 1)];
@@ -335,6 +364,12 @@ function loop(tms: number) {
   renderer.updateDynamic(f);
   renderer.updatePlayer(p.x, p.y, p.z, p.spin, p.vy, p.grounded, p.speed);
   renderGhosts(f);
+
+  // Live multiplayer: stream my position to rivals ~12 Hz.
+  if (data.live && f - liveSendFrame >= 5) {
+    liveSendFrame = f;
+    data.live.pos({ x: p.x, y: p.y, z: p.z, progress: sim.progress() });
+  }
 
   // Style: grazing an obstacle without dying scores points.
   if (p.nearMisses > lastNear) {
