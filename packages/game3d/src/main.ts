@@ -25,10 +25,12 @@ const popupEl = document.getElementById('popup')!;
 const stickEl = document.getElementById('stick')!;
 const knobEl = document.getElementById('knob')!;
 const jumpBtn = document.getElementById('jumpBtn')!;
+const exitBtn = document.getElementById('exitBtn')!;
 const hint = document.getElementById('hint');
 
 const AUTOPLAY = new URLSearchParams(location.search).has('autoplay');
 const COUNTDOWN_MS = 2600;
+const RESTART_COUNTDOWN_MS = 1100; // quick "3..2..1" after a crash
 
 let sim: Sim3D | null = null;
 let renderer: Renderer3D | null = null;
@@ -37,6 +39,7 @@ let running = false;
 let acc = 0;
 let last = 0;
 let deaths = 0;
+let attempts = 0;                     // how many tries on this level (death = restart)
 let countdownMs = 0;
 let slowmoMs = 0;
 let style = 0;
@@ -64,9 +67,29 @@ async function boot() {
 
 function startRun(d: GameData3D) {
   data = d;
+  attempts = 1;
+  // A fresh renderer per LEVEL (not per attempt — a restart reuses it so we
+  // don't churn WebGL contexts on every crash).
   if (renderer) renderer.dispose();
-  sim = new Sim3D(d.course, d.placedTraps);
   renderer = new Renderer3D(app, d.course, d.placedTraps);
+  // Fastest friend's ghost drives the live delta readout.
+  bestGhost = d.ghosts.length ? d.ghosts.reduce((a, b) => (b.timeMs < a.timeMs ? b : a)) : null;
+  newAttempt(COUNTDOWN_MS);
+}
+
+/** Crash/fall = terminal death → restart the WHOLE level from the start. */
+function restartAttempt() {
+  attempts++;
+  renderer?.hit();
+  newAttempt(RESTART_COUNTDOWN_MS);
+  showPopup(`💥 ¡A EMPEZAR! · intento ${attempts}`);
+}
+
+/** (Re)build the sim + reset per-attempt state and start the countdown. */
+function newAttempt(countdown: number) {
+  if (!data) return;
+  if (sim) sim.free();
+  sim = new Sim3D(data.course, data.placedTraps);
   acc = 0;
   last = 0;
   deaths = 0;
@@ -74,21 +97,17 @@ function startRun(d: GameData3D) {
   style = 0;
   lastNear = 0;
   popupMs = 0;
-  countdownMs = COUNTDOWN_MS;
+  countdownMs = countdown;
   pending.length = 0;
   steer = 0; lastSteerSent = 0; leftHeld = rightHeld = shiftHeld = false;
   stickEl.style.opacity = '0';
   jumpBtn.style.display = 'none';
+  exitBtn.style.display = 'none';
   events = [];
   autoEvents = null;
-
-  // Fastest friend's ghost drives the live delta readout.
-  bestGhost = d.ghosts.length
-    ? d.ghosts.reduce((a, b) => (b.timeMs < a.timeMs ? b : a))
-    : null;
   bestCursor = 0;
 
-  subEl.textContent = `TRAMPA 3D · ${d.course.theme}`;
+  subEl.textContent = `TRAMPA 3D · ${data.course.theme}`;
   if (hint) hint.style.display = '';
   deltaEl.textContent = '';
   posEl.textContent = '';
@@ -97,8 +116,8 @@ function startRun(d: GameData3D) {
   progressWrap.style.opacity = '0';
   popupEl.style.opacity = '0';
 
-  if (d.autoplay || AUTOPLAY) {
-    const log = autopilot3d(d.course, d.placedTraps).log;
+  if (data.autoplay || AUTOPLAY) {
+    const log = autopilot3d(data.course, data.placedTraps).log;
     autoEvents = new Map();
     for (const ev of log.events) {
       const arr = autoEvents.get(ev.f) ?? [];
@@ -107,6 +126,24 @@ function startRun(d: GameData3D) {
     }
   }
   running = true;
+}
+
+/** Quit the current run (exit button / Esc) back to the right menu. */
+function exitRun() {
+  if (!running && !sim) return;
+  running = false;
+  if (renderer) { renderer.dispose(); renderer = null; }
+  if (sim) { sim.free(); sim = null; }
+  stickEl.style.opacity = '0';
+  jumpBtn.style.display = 'none';
+  exitBtn.style.display = 'none';
+  progressWrap.style.opacity = '0';
+  countdownEl.style.opacity = '0';
+  popupEl.style.opacity = '0';
+  if (hint) hint.style.display = 'none';
+  const d = data;
+  if (d?.mode === 'room' && d.roomId) overlay.showRoom(d.roomId);
+  else overlay.showMenu();
 }
 
 function finish() {
@@ -135,9 +172,11 @@ function finish() {
   styleEl.textContent = '';
   stickEl.style.opacity = '0';
   jumpBtn.style.display = 'none';
+  exitBtn.style.display = 'none';
   popupEl.style.opacity = '0';
   countdownEl.style.opacity = '0';
   result.style = style;
+  result.attempts = attempts;
   overlay.showResult(result);
 }
 
@@ -175,7 +214,8 @@ const STICK_R = 55;
 let stickId = -1, stickCx = 0;
 addEventListener('pointerdown', (e) => {
   if (!active() || stickId !== -1) return;
-  if ((e.target as HTMLElement)?.id === 'jumpBtn') return;
+  const tid = (e.target as HTMLElement)?.id;
+  if (tid === 'jumpBtn' || tid === 'exitBtn') return;
   stickId = e.pointerId; stickCx = e.clientX;
   stickEl.style.left = `${e.clientX}px`;
   stickEl.style.top = `${e.clientY}px`;
@@ -195,6 +235,11 @@ function endStick(e: PointerEvent) {
 addEventListener('pointerup', endStick);
 addEventListener('pointercancel', endStick);
 jumpBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); if (active()) pending.push('J'); });
+
+// Quit the run: the on-screen ✕ button, or the Esc key (works during the
+// countdown too — you can always bail out to the menu).
+exitBtn.addEventListener('click', () => { if (running || sim) exitRun(); });
+addEventListener('keydown', (e) => { if (e.code === 'Escape' && (running || sim)) exitRun(); });
 
 // ---- HUD helpers ----
 function renderGhosts(f: number) {
@@ -244,6 +289,7 @@ function loop(tms: number) {
       countdownEl.style.opacity = '0';
       progressWrap.style.opacity = '1';
       jumpBtn.style.display = 'flex';
+      exitBtn.style.display = 'block';
     }
     return;
   }
@@ -272,7 +318,12 @@ function loop(tms: number) {
     pending.length = 0;
 
     sim.step();
-    if (sim.deaths > deaths) { deaths = sim.deaths; renderer.hit(); slowmoMs = 340; }
+    if (sim.dead) {
+      // Terminal death: a demo bot just DNFs; a human restarts the whole level.
+      if (autoEvents) { finish(); return; }
+      restartAttempt();
+      return;
+    }
     acc -= FIXED_DT_3D;
     if (sim.finished || sim.frame >= MAX_RUN_FRAMES_3D) { finish(); return; }
   }

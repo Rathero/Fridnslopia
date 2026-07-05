@@ -107,7 +107,7 @@ const crusher = (x: number, z: number, period = 84, phase = 0, w = 1.8): ChunkOb
 // A bar rotating in the ground plane about (x,z). `amp` = arm half-length, so the
 // swept disc is [x-amp, x+amp]; keep amp small enough that the outer lanes stay
 // clear (autopilot rounds the disc; humans weave through the sweeping gaps).
-const spinner = (x: number, z: number, period = 150, phase = 0, len = 4.6): ChunkObs =>
+const spinner = (x: number, z: number, period = 170, phase = 0, len = 3.6): ChunkObs =>
   ({ kind: 'spinner', x, z, y: 1.05, w: len, h: 1.7, d: 0.7, amp: len / 2, period, phase });
 
 const CHUNKS: Chunk[] = [
@@ -160,8 +160,11 @@ const CHUNKS: Chunk[] = [
   { id: 'sunken_dip', len: 18, difficulty: 2, tags: ['step', 'height'], floors: [
     fl(0, 4), fl(4, 6, -0.35), fl(6, 12, -0.7), fl(12, 14, -0.35), fl(14, 18)],
     trapSlots: [{ x: 0, z: 9 }] },
-  { id: 'ramp_gap_ramp', len: 22, difficulty: 4, tags: ['ramp', 'gap', 'jump', 'height', 'hard'], floors: [
-    fl(0, 3), fl(3, 5, 0.35), fl(5, 8, 0.7), fl(12, 15, 0.7), fl(15, 17, 0.35), fl(17, 22)] },
+  // Ascend to a plateau, descend back to flat, then a GROUND-LEVEL gap (a step
+  // up right before a gap launches the ball and breaks the jump — always take
+  // off from flat ground).
+  { id: 'ramp_gap_ramp', len: 24, difficulty: 4, tags: ['ramp', 'gap', 'jump', 'height', 'hard'], floors: [
+    fl(0, 3), fl(3, 5, 0.35), fl(5, 8, 0.7), fl(8, 10, 0.35), fl(10, 14), fl(17, 24)] },
   { id: 'plateau_weave', len: 22, difficulty: 3, tags: ['ramp', 'weave', 'height'], floors: [
     fl(0, 3), fl(3, 5, 0.35), fl(5, 16, 0.7), fl(16, 18, 0.35), fl(18, 22)],
     obstacles: [wall(3.1, 8), wall(-3.1, 12)] },
@@ -170,15 +173,29 @@ const CHUNKS: Chunk[] = [
   // (partial-width pistons / centre spinners with clear outer lanes) so the
   // autopilot stays completable, while humans get a risky timed shortcut. ---
   { id: 'spinner_gate', len: 18, difficulty: 3, tags: ['spinner', 'dodge'], floors: [fl(0, 18)],
-    obstacles: [spinner(0, 9, 150, 0)] },
+    obstacles: [spinner(0, 9, 175, 0)] },
   { id: 'twin_spinners', len: 26, difficulty: 4, tags: ['spinner', 'dodge', 'hard'], floors: [fl(0, 26)],
-    obstacles: [spinner(0, 8, 140, 0), spinner(0, 17, 140, 70)] },
+    obstacles: [spinner(0, 8, 165, 0), spinner(0, 17, 165, 82)] },
   { id: 'piston_row', len: 18, difficulty: 3, tags: ['crusher', 'dodge'], floors: [fl(0, 18)],
     obstacles: [crusher(-2.4, 7, 84, 0), crusher(2.4, 7, 84, 42), crusher(0, 13, 84, 20)] },
   { id: 'piston_gauntlet', len: 24, difficulty: 4, tags: ['crusher', 'dodge', 'hard'], floors: [fl(0, 24)],
     obstacles: [crusher(-2.4, 7, 82, 0), crusher(2.4, 13, 82, 40), crusher(0, 19, 82, 16)] },
   { id: 'spin_and_smash', len: 26, difficulty: 4, tags: ['spinner', 'crusher', 'dodge', 'hard'], floors: [fl(0, 26)],
     obstacles: [spinner(0, 8, 150, 0), crusher(-2.4, 17, 84, 0), crusher(2.4, 17, 84, 42)] },
+
+  // --- Non-linear "giros": the safe path snakes hard left↔right, climbs high,
+  // and (winding_beam) threads a curving ribbon over the void. Longer chunks =
+  // longer levels. All kept death-free-completable by the autopilot. ---
+  { id: 'serpentine', len: 26, difficulty: 3, tags: ['weave', 'dodge', 'giros'], floors: [fl(0, 26)],
+    obstacles: [wall(-3.4, 4, 3.8), wall(3.4, 9, 3.8), wall(-3.4, 14, 3.8), wall(3.4, 19, 3.8), wall(-3.4, 24, 3.8)] },
+  { id: 'grand_stairs', len: 28, difficulty: 3, tags: ['ramp', 'step', 'height'], floors: [
+    fl(0, 3), fl(3, 5, 0.4), fl(5, 7, 0.8), fl(7, 9, 1.2), fl(9, 14, 1.6), fl(14, 16, 1.2), fl(16, 18, 0.8), fl(18, 20, 0.4), fl(20, 28)],
+    trapSlots: [{ x: 0, z: 11 }] },
+  { id: 'winding_beam', len: 24, difficulty: 4, tags: ['narrow', 'giros', 'hard'], floors: [
+    fl(0, 3.5), beam(3.5, 8, 5.6, -1.5), beam(8, 12.5, 5.6, 1.5), beam(12.5, 17, 5.6, -1.5), fl(17, 24)] },
+  { id: 'hill_weave', len: 24, difficulty: 4, tags: ['weave', 'height', 'hard'], floors: [
+    fl(0, 3), fl(3, 5, 0.4), fl(5, 19, 0.8), fl(19, 21, 0.4), fl(21, 24)],
+    obstacles: [wall(-3.2, 8, 3.6), wall(3.2, 13, 3.6), wall(-3.2, 18, 3.6)] },
 ];
 
 const START = CHUNKS.find((c) => c.id === 'start_run')!;

@@ -62,7 +62,7 @@ export type Input3D = string;
 
 export interface PlayerState3D {
   x: number; y: number; z: number; vy: number; grounded: boolean; spin: number; speed: number;
-  nearMisses: number; steer: number;
+  nearMisses: number; steer: number; dead: boolean;
 }
 
 /** World-space AABB of a moving obstacle at a given frame.
@@ -134,9 +134,11 @@ export class Sim3D {
   readonly params: Params3D;
   frame = 0;
   finished = false;
+  /** Terminal death: on any hit/fall the attempt ends (no checkpoints). The
+   *  player restarts the whole level; a submitted run must be death-free. */
+  dead = false;
   deaths = 0;
   nearMisses = 0;
-  penaltySeconds = 0;
   /** Traps that actually applied their effect (exact saboteur accounting). */
   readonly trapHits: TrapHit3D[] = [];
 
@@ -146,7 +148,6 @@ export class Sim3D {
   private grounded = false;
   private framesSinceGround = 99;
   private spin = 0;
-  private lastCheckpointZ = 0;
   private r: number;
   private gluedFrames = 0;
   private bounceCooldown = 0;
@@ -213,7 +214,7 @@ export class Sim3D {
   }
 
   step() {
-    if (this.finished) return;
+    if (this.finished || this.dead) return;
     const t = this.player.translation();
     const v = this.player.linvel();
 
@@ -257,7 +258,7 @@ export class Sim3D {
     }
     // Placed traps — each is a skill-check: beat it and you pay nothing (and
     // score style); fail and it costs you AND credits the saboteur (exact).
-    if (!this.finished) {
+    if (!this.finished && !this.dead) {
       for (const d of this.dangers) {
         const b = d.box;
         if (!this.overlaps(p, b.minX, b.maxX, b.minY, b.maxY, b.minZ, b.maxZ)) continue;
@@ -286,7 +287,7 @@ export class Sim3D {
     // Near-miss / style: graze an obstacle (close but no hit) — counted once
     // per obstacle. Deterministic; feeds the client's style score. Only when we
     // didn't just die on it.
-    if (!this.finished) {
+    if (!this.finished && !this.dead) {
       const graze = 0.6;
       for (let i = 0; i < this.course.obstacles.length; i++) {
         if (this.grazed.has(i)) continue;
@@ -301,11 +302,7 @@ export class Sim3D {
       }
     }
 
-    const cur = this.player.translation();
-    for (const cz of this.course.checkpoints) {
-      if (cz <= cur.z && cz > this.lastCheckpointZ) this.lastCheckpointZ = cz;
-    }
-    if (cur.z >= this.course.finishZ) this.finished = true;
+    if (this.player.translation().z >= this.course.finishZ) this.finished = true;
   }
 
   private overlaps(p: { x: number; y: number; z: number }, minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number, extra = 0): boolean {
@@ -317,16 +314,14 @@ export class Sim3D {
     return ex * ex + ey * ey + ez * ez < rad * rad;
   }
 
+  /** Terminal death — the attempt ends here (no respawn, no checkpoint). The
+   *  client restarts the whole level; the server re-sim of a submitted run must
+   *  never reach this, so a run that would die is rejected by anti-cheat. */
   private die() {
+    if (this.dead) return;
+    this.dead = true;
     this.deaths++;
-    this.penaltySeconds += this.params.respawnPenalty;
-    this.player.setTranslation({ x: 0, y: this.r + 0.3, z: this.lastCheckpointZ + 0.5 }, true);
     this.player.setLinvel({ x: 0, y: 0, z: 0 }, true);
-    this.steer = 0;
-    this.appliedSteer = 0;
-    this.framesSinceGround = 99;
-    this.gluedFrames = 0;
-    this.bounceCooldown = 0;
   }
 
   /** Credit a trap that caught the runner — once per trap (deterministic). */
@@ -348,10 +343,10 @@ export class Sim3D {
     const v = this.player.linvel();
     return {
       x: t.x, y: t.y, z: t.z, vy: v.y, grounded: this.grounded, spin: this.spin,
-      speed: this.baseSpeed(), nearMisses: this.nearMisses, steer: this.appliedSteer,
+      speed: this.baseSpeed(), nearMisses: this.nearMisses, steer: this.appliedSteer, dead: this.dead,
     };
   }
   progress(): number { return Math.max(0, Math.min(1, this.player.translation().z / this.course.finishZ)); }
-  timeMs(): number { return Math.round((this.frame / 60 + this.penaltySeconds) * 1000); }
+  timeMs(): number { return Math.round((this.frame / 60) * 1000); }
   free() { this.world.free(); }
 }

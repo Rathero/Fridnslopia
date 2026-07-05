@@ -255,7 +255,11 @@ export class Overlay {
     this.card.innerHTML = `
       ${head}
       ${styleLine}
-      <div class="center muted">${r.deaths} muertes${r.course.modifier !== 'none' ? ' · mod: ' + r.course.modifier : ''}</div>
+      <div class="center muted">${
+        r.finished
+          ? (r.attempts && r.attempts > 1 ? `conseguido al intento ${r.attempts} 💪` : '¡a la primera! 🏅')
+          : 'no llegaste a meta'
+      }${r.course.modifier !== 'none' ? ' · mod: ' + r.course.modifier : ''}</div>
       <div id="post"></div>
       <div class="row">
         <button class="btn" id="retry">↻ Reintentar</button>

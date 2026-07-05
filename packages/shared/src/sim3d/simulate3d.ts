@@ -41,7 +41,9 @@ export async function simulateRun3D(
   }
 
   let guard = 0;
-  while (!sim.finished && guard < MAX_RUN_FRAMES_3D) {
+  // Terminal death: stop as soon as the runner dies — such a run "did not
+  // finish", so anti-cheat rejects it. A clean submitted run never dies.
+  while (!sim.finished && !sim.dead && guard < MAX_RUN_FRAMES_3D) {
     const evs = byFrame.get(sim.frame);
     if (evs) for (const t of evs) sim.input(t);
     sim.step();

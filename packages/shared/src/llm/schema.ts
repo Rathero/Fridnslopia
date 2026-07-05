@@ -32,8 +32,8 @@ export const defaultConfig: DailyConfig = {
   theme: 'neon_grid',
   palette: { bg: '#0b0f1a', platform: '#2a3550', accent: '#38e1ff' },
   chunkWeights: { gap: 1.2, jump: 1.2, midair: 1.0, moving: 0.8, spike: 1.0, saw: 0.6, flat: 0.8, climb: 0.9 },
-  maxDifficulty: 3,
-  length: 12,
+  maxDifficulty: 4,
+  length: 16,
   dailyModifier: 'none',
   flavorText: 'Otro día, otra carrera. A correr.',
 };
