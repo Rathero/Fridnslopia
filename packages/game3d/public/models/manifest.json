@@ -46,5 +46,13 @@
     "emoji": "😇",
     "scale": 1,
     "yaw": 0
+  },
+  {
+    "id": "runner-lava",
+    "name": "Magma",
+    "file": "runner-lava.glb",
+    "emoji": "🔥",
+    "scale": 1,
+    "yaw": 0
   }
 ]
