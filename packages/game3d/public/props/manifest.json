@@ -42,12 +42,6 @@
     "biome": "neon"
   },
   {
-    "id": "neon-arcade",
-    "name": "Arcade",
-    "file": "neon-arcade.glb",
-    "biome": "neon"
-  },
-  {
     "id": "ice-berg",
     "name": "Témpano",
     "file": "ice-berg.glb",

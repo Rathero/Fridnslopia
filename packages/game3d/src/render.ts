@@ -331,13 +331,16 @@ export class Renderer3D {
       const geo = new THREE.BoxGeometry(f.w, f.h, f.d);
       const fmat = this.mat(i % 2 ? pal.floor2 : pal.floor, 0x000000, 0, 0.85, 0.1);
       if (ftex) {
-        // Tile the panel across the slab; the palette colour tints it so biomes
-        // still read (MeshStandard multiplies map × colour).
+        // Tile the panel across the slab; lift the tint well toward white so the
+        // real panel texture actually reads (MeshStandard multiplies map × colour;
+        // the dark palette colour alone buried it).
         const tex = ftex.clone();
         tex.needsUpdate = true;
         tex.repeat.set(Math.max(1, Math.round(f.w / 4)), Math.max(1, Math.round(f.d / 4)));
         fmat.map = tex;
-        fmat.color.multiplyScalar(1.6); // lift the tint so the texture isn't muddy
+        fmat.color.lerp(new THREE.Color(0xffffff), 0.6);
+        fmat.roughness = 0.7;
+        fmat.metalness = 0.25;
       }
       const mesh = new THREE.Mesh(geo, fmat);
       mesh.position.set(f.x, f.y, f.z);
@@ -690,29 +693,26 @@ export class Renderer3D {
     const list = propsForBiome(this.course.theme);
     if (!list.length) return;
     const hw = this.course.halfWidth;
-    const startZ = this.course.startZ - 4;
-    const endZ = this.course.finishZ + 4;
+    const startZ = this.course.startZ + 6;
+    const endZ = this.course.finishZ - 4;
     let i = 0;
-    for (let z = startZ; z < endZ; z += 8) {
-      for (const side of [-1, 1] as const) {
-        const { group, scale } = cloneProp(list[i % list.length]);
-        group.updateMatrixWorld(true);
-        const size = new THREE.Vector3();
-        new THREE.Box3().setFromObject(group).getSize(size);
-        const targetH = 6 + (i % 3) * 2.5; // varied skyline
-        const s = (size.y > 0.05 && size.y < 1000 ? targetH / size.y : 1) * (scale ?? 1);
-        group.scale.setScalar(s);
-        const box = new THREE.Box3().setFromObject(group);
-        group.position.set(
-          side * (hw + 3 + ((i * 13) % 5)),
-          -box.min.y,
-          z + (side > 0 ? 4 : 0),
-        );
-        group.rotation.y = (i % 4) * 0.5;
-        group.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
-        this.scene.add(group);
-        i++;
-      }
+    // One prop every ~15 units, alternating sides, set back from the track and
+    // upright facing it — a calm skyline, not a cluttered wall of scenery.
+    for (let z = startZ; z < endZ; z += 15) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const { group, scale } = cloneProp(list[i % list.length]);
+      group.updateMatrixWorld(true);
+      const size = new THREE.Vector3();
+      new THREE.Box3().setFromObject(group).getSize(size);
+      const targetH = 4 + (i % 3) * 1.6; // 4 .. 7.2
+      const s = (size.y > 0.05 && size.y < 1000 ? targetH / size.y : 1) * (scale ?? 1);
+      group.scale.setScalar(s);
+      const box = new THREE.Box3().setFromObject(group);
+      group.position.set(side * (hw + 5 + (i % 3) * 1.5), -box.min.y, z);
+      group.rotation.y = side > 0 ? -0.55 : 0.55; // face the track, stay upright
+      group.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
+      this.scene.add(group);
+      i++;
     }
   }
 
