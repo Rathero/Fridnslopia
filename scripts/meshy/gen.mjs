@@ -1,6 +1,6 @@
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { EXAMPLES, FINAL } from './jobs.mjs';
+import { EXAMPLES, FINAL, ASSETS } from './jobs.mjs';
 
 /**
  * Generate TRAMPA characters + props via the Meshy API and wire them into the
@@ -13,7 +13,7 @@ import { EXAMPLES, FINAL } from './jobs.mjs';
 const KEY = process.env.MESHY_KEY;
 if (!KEY) { console.error('Set MESHY_KEY'); process.exit(1); }
 const BATCH = (process.argv[2] || 'examples').toLowerCase();
-const JOBS = BATCH === 'final' ? FINAL : EXAMPLES;
+const JOBS = BATCH === 'assets' ? ASSETS : BATCH === 'final' ? FINAL : EXAMPLES;
 
 const BASE = 'https://api.meshy.ai';
 const H = { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' };
@@ -138,6 +138,31 @@ async function run() {
     } catch (e) { console.error(`  ✗ ${p.id} failed:`, e.message); }
   }
 
-  console.log('\n✅ Done. Models in public/models, props in public/props.');
+  // Static "map furniture": traps, hazards, walls, floor tiles. Same text-to-3d
+  // path as props (no rigging), each category into its own public/<dir>.
+  const PUBLIC = new URL('../../packages/game3d/public/', import.meta.url);
+  for (const cat of JOBS.statics ?? []) {
+    const dir = new URL(`${cat.dir}/`, PUBLIC);
+    await mkdir(dir, { recursive: true });
+    const mPath = new URL('manifest.json', dir);
+    const m = existsSync(mPath) ? JSON.parse(await readFile(mPath, 'utf8')) : [];
+    console.log(`\n=== ${cat.dir.toUpperCase()} (${cat.items.length}) ===`);
+    for (const it of cat.items) {
+      console.log(`\n▶ ${it.name ?? it.id} (${it.id})`);
+      try {
+        const { glb } = await makeModel(it.prompt);
+        const file = `${it.id}.glb`;
+        const bytes = await download(glb, new URL(file, dir));
+        console.log(`  saved ${cat.dir}/${file} (${(bytes / 1024).toFixed(0)} KB)`);
+        const { prompt, ...meta } = it;
+        const entry = { ...meta, file };
+        const i = m.findIndex((x) => x.id === it.id);
+        if (i >= 0) m[i] = entry; else m.push(entry);
+        await writeFile(mPath, JSON.stringify(m, null, 2));
+      } catch (e) { console.error(`  ✗ ${it.id} failed:`, e.message); }
+    }
+  }
+
+  console.log('\n✅ Done. Assets in public/models, props, traps, hazards, walls, floors.');
 }
 run().catch((e) => { console.error(e); process.exit(1); });

@@ -7,6 +7,7 @@ import type { Course3D, PlacedTrap3D } from '@trampa/shared';
 import { obstacleAABB, spinnerAngle } from '@trampa/shared';
 import { makeRunner, type Runner } from './game/runners.js';
 import { propsForBiome, cloneProp, hasProps } from './game/propLoader.js';
+import { trapModel, hazardModel, wallModel, floorTexture, fitGroup } from './game/furniture.js';
 import { SKINS, equippedSkin, type Skin } from './cosmetics.js';
 
 const FIXED_DT = 1 / 60;
@@ -325,9 +326,20 @@ export class Renderer3D {
 
   private buildFloors() {
     const pal = this.course.palette;
+    const ftex = floorTexture(); // real tiled floor texture (Meshy), if present
     this.course.floors.forEach((f, i) => {
       const geo = new THREE.BoxGeometry(f.w, f.h, f.d);
-      const mesh = new THREE.Mesh(geo, this.mat(i % 2 ? pal.floor2 : pal.floor, 0x000000, 0, 0.9, 0.04));
+      const fmat = this.mat(i % 2 ? pal.floor2 : pal.floor, 0x000000, 0, 0.85, 0.1);
+      if (ftex) {
+        // Tile the panel across the slab; the palette colour tints it so biomes
+        // still read (MeshStandard multiplies map × colour).
+        const tex = ftex.clone();
+        tex.needsUpdate = true;
+        tex.repeat.set(Math.max(1, Math.round(f.w / 4)), Math.max(1, Math.round(f.d / 4)));
+        fmat.map = tex;
+        fmat.color.multiplyScalar(1.6); // lift the tint so the texture isn't muddy
+      }
+      const mesh = new THREE.Mesh(geo, fmat);
       mesh.position.set(f.x, f.y, f.z);
       mesh.receiveShadow = true;
       this.scene.add(mesh);
@@ -357,6 +369,18 @@ export class Renderer3D {
     for (const o of this.course.obstacles) {
       if (o.kind === 'crusher') { this.buildCrusher(o); continue; }
       if (o.kind === 'spinner') { this.buildSpinner(o); continue; }
+
+      // Static walls become a real barrier model (Meshy); movers stay boxes so
+      // their sweep + rim telegraph reads clearly.
+      const wm = o.kind === 'wall' ? wallModel(Math.round(Math.abs(o.z) + Math.abs(o.x))) : null;
+      if (wm) {
+        fitGroup(wm.group, wm.size, o.w * 0.98, o.h, o.d * 0.98, 'fill');
+        const b = new THREE.Box3().setFromObject(wm.group);
+        wm.group.position.set(o.x, (o.y - o.h / 2) - b.min.y, o.z);
+        wm.group.traverse((m) => { if ((m as THREE.Mesh).isMesh) { (m as THREE.Mesh).castShadow = true; (m as THREE.Mesh).receiveShadow = true; } });
+        this.scene.add(wm.group);
+        continue;
+      }
 
       const geo = new THREE.BoxGeometry(o.w, o.h, o.d);
       const mesh = new THREE.Mesh(geo, this.mat(pal.obstacle, pal.obstacle, 0.55, 0.55, 0.2));
@@ -390,10 +414,22 @@ export class Renderer3D {
     head.castShadow = true;
     head.receiveShadow = true;
     group.add(head);
-    group.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(head.geometry),
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }),
-    ));
+    // Real piston-head model (Meshy) if present; keep the box as the (hidden)
+    // animation reference so updateDynamic still drives the slam.
+    const hm = hazardModel('crusher');
+    if (hm) {
+      head.visible = false;
+      fitGroup(hm.group, hm.size, o.w * 1.05, o.h, o.d * 1.05, 'fill');
+      const b = new THREE.Box3().setFromObject(hm.group);
+      hm.group.position.y = -o.h / 2 - b.min.y;
+      hm.group.traverse((m) => { if ((m as THREE.Mesh).isMesh) (m as THREE.Mesh).castShadow = true; });
+      group.add(hm.group);
+    } else {
+      group.add(new THREE.LineSegments(
+        new THREE.EdgesGeometry(head.geometry),
+        new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }),
+      ));
+    }
     group.position.set(o.x, o.y, o.z);
     this.scene.add(group);
 
@@ -430,10 +466,22 @@ export class Renderer3D {
     );
     bar.castShadow = true;
     pivot.add(bar);
-    pivot.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(bar.geometry),
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }),
-    ));
+    // Real spinning-bar model (Meshy) centred on the pivot; the box stays as the
+    // (hidden) reference so the rotation still matches the sim exactly.
+    const hm = hazardModel('spinner');
+    if (hm) {
+      bar.visible = false;
+      fitGroup(hm.group, hm.size, L * 2, o.h, o.d * 1.4, 'fill');
+      const c = new THREE.Box3().setFromObject(hm.group).getCenter(new THREE.Vector3());
+      hm.group.position.sub(c);
+      hm.group.traverse((m) => { if ((m as THREE.Mesh).isMesh) (m as THREE.Mesh).castShadow = true; });
+      pivot.add(hm.group);
+    } else {
+      pivot.add(new THREE.LineSegments(
+        new THREE.EdgesGeometry(bar.geometry),
+        new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }),
+      ));
+    }
 
     // A bright hub at the pivot.
     const hub = new THREE.Mesh(
@@ -671,14 +719,24 @@ export class Renderer3D {
   private buildTraps() {
     for (const t of this.placedTraps) {
       const color = t.trapType === 'spike' ? 0xff2266 : t.trapType === 'bounce' ? 0xffcc00 : 0x22ffcc;
-      const m = new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.7, 0),
-        this.mat(color, color, 0.9, 0.4, 0.2),
-      );
-      m.position.set(t.slotX, 0.9, t.slotZ);
-      m.castShadow = true;
-      this.scene.add(m);
-      this.trapFx.push(m);
+      const model = trapModel(t.trapType);
+      if (model) {
+        // Real trap model (Meshy): fit to ~1.4 tall, sit on the ground.
+        fitGroup(model.group, model.size, 1.8, 1.4, 1.8, 'fit');
+        const box = new THREE.Box3().setFromObject(model.group);
+        model.group.position.set(t.slotX, -box.min.y, t.slotZ);
+        model.group.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
+        this.scene.add(model.group);
+      } else {
+        const m = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.7, 0),
+          this.mat(color, color, 0.9, 0.4, 0.2),
+        );
+        m.position.set(t.slotX, 0.9, t.slotZ);
+        m.castShadow = true;
+        this.scene.add(m);
+        this.trapFx.push(m);
+      }
 
       // Ground warning ring so the trap telegraphs from far away.
       const ring = new THREE.Mesh(

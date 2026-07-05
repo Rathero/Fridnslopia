@@ -11,8 +11,6 @@ packages/client/dist/
 .vite/
 *.tsbuildinfo
 packages/server/vercel-out/
-# Generated 3D assets (Meshy/CC0) — deployed from the local build, not stored in git.
-packages/game3d/public/models/*.glb
-packages/game3d/public/props/*.glb
-packages/game3d/public/models/manifest.json
-packages/game3d/public/props/manifest.json
+# Generated 3D assets (Meshy) ARE committed now, so they survive fresh clones /
+# rebuilds instead of living only in the deployed dist (they used to vanish each
+# session). ~400 KB each compressed.
