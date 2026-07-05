@@ -81,6 +81,7 @@ function startRun(d: GameData3D) {
 function restartAttempt() {
   attempts++;
   renderer?.hit();
+  renderer?.resetTransient(); // reused renderer → clear phantom landing FX / trail
   newAttempt(RESTART_COUNTDOWN_MS);
   showPopup(`💥 ¡A EMPEZAR! · intento ${attempts}`);
 }
@@ -237,9 +238,10 @@ addEventListener('pointercancel', endStick);
 jumpBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); if (active()) pending.push('J'); });
 
 // Quit the run: the on-screen ✕ button, or the Esc key (works during the
-// countdown too — you can always bail out to the menu).
-exitBtn.addEventListener('click', () => { if (running || sim) exitRun(); });
-addEventListener('keydown', (e) => { if (e.code === 'Escape' && (running || sim)) exitRun(); });
+// countdown too). Gated on `running`, which is true through a run + its
+// countdown but false on the result/menu screens, so Esc there is a no-op.
+exitBtn.addEventListener('click', () => { if (running) exitRun(); });
+addEventListener('keydown', (e) => { if (e.code === 'Escape' && running) exitRun(); });
 
 // ---- HUD helpers ----
 function renderGhosts(f: number) {

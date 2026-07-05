@@ -190,9 +190,11 @@ const CHUNKS: Chunk[] = [
     obstacles: [wall(-3.4, 4, 3.8), wall(3.4, 9, 3.8), wall(-3.4, 14, 3.8), wall(3.4, 19, 3.8), wall(-3.4, 24, 3.8)] },
   { id: 'grand_stairs', len: 28, difficulty: 3, tags: ['ramp', 'step', 'height'], floors: [
     fl(0, 3), fl(3, 5, 0.4), fl(5, 7, 0.8), fl(7, 9, 1.2), fl(9, 14, 1.6), fl(14, 16, 1.2), fl(16, 18, 0.8), fl(18, 20, 0.4), fl(20, 28)],
-    trapSlots: [{ x: 0, z: 11 }] },
+    // Trap on the flat top-0 run-out — a trap box is anchored at ground level,
+    // so a slot on the 1.6-high plateau would sit buried below the runner.
+    trapSlots: [{ x: 0, z: 24 }] },
   { id: 'winding_beam', len: 24, difficulty: 4, tags: ['narrow', 'giros', 'hard'], floors: [
-    fl(0, 3.5), beam(3.5, 8, 5.6, -1.5), beam(8, 12.5, 5.6, 1.5), beam(12.5, 17, 5.6, -1.5), fl(17, 24)] },
+    fl(0, 3.5), beam(3.5, 8, 5.6, -1.8), beam(8, 12.5, 5.6, 1.8), beam(12.5, 17, 5.6, -1.8), fl(17, 24)] },
   { id: 'hill_weave', len: 24, difficulty: 4, tags: ['weave', 'height', 'hard'], floors: [
     fl(0, 3), fl(3, 5, 0.4), fl(5, 19, 0.8), fl(19, 21, 0.4), fl(21, 24)],
     obstacles: [wall(-3.2, 8, 3.6), wall(3.2, 13, 3.6), wall(-3.2, 18, 3.6)] },

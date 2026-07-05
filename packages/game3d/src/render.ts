@@ -190,7 +190,24 @@ export class Renderer3D {
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
-    addEventListener('resize', () => this.onResize());
+    addEventListener('resize', this.onResizeHandler);
+  }
+
+  private readonly onResizeHandler = () => this.onResize();
+
+  /** Reset per-attempt visual state when this renderer is REUSED for a
+   *  death-restart, so the fresh attempt doesn't inherit a phantom landing
+   *  impact or a trail streaking back from the old (pre-crash) position. */
+  resetTransient() {
+    this.lastX = 0;
+    this.lastY = 0;
+    this.squash = 0;
+    this.shake = 0;
+    this.speedNorm = 0;
+    for (const m of this.trail) {
+      m.position.set(0, -200, 0);
+      (m.material as THREE.MeshBasicMaterial).opacity = 0;
+    }
   }
 
   /** Emit a burst of `n` sparks from a point with a spread and colour. */
@@ -691,6 +708,7 @@ export class Renderer3D {
   }
 
   dispose() {
+    removeEventListener('resize', this.onResizeHandler);
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement);
